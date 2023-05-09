@@ -1,5 +1,5 @@
 
-# Installation Guide for CARLA Simulation Platform
+# Installation Guide for CARLA Simulation Platform and the Virtualization Framework Editor
 
 ## Before you begin
 
@@ -67,6 +67,10 @@ The Debian package is available for both Ubuntu 18.04 and Ubuntu 20.04, however,
 
 `cd path/to/carla/root
 ./ImportAssets.sh` 
+
+Once you have followed these steps, you should be able to install and use CARLA on your system. If you encounter any issues, please refer to the official documentation or seek help from the community forums.
+
+
 ## Python API
 CARLA Python API is a module that provides a simple interface to interact with the CARLA simulation platform using Python. The API allows users to perform various tasks such as controlling the simulation environment, receiving sensory information from vehicles and pedestrians, and manipulating the simulation objects, such as spawning actors or setting their attributes.
 
@@ -138,6 +142,53 @@ To run a Python script that uses the CARLA Python API, follow these steps:
 This script connects to the CARLA server, spawns a Tesla Model 3 vehicle at a specific location, and applies a throttle control command to make the vehicle move forward. After 5 seconds, the script destroys the vehicle and terminates the connection to the server.
 
 You can modify this script or create your own script to interact with the CARLA simulator using the Python API.
-## Conclusion
 
-Once you have followed these steps, you should be able to install and use CARLA on your system. If you encounter any issues, please refer to the official documentation or seek help from the community forums.
+CARLA provides several examples of how to use its Python API to interact with the simulator. These examples demonstrate various functionalities such as spawning actors, controlling them, and retrieving data from sensors.
+
+To run these examples, you first need to have CARLA installed on your system. Once you have installed CARLA, you can find the Python examples in the `PythonAPI/examples` directory. There are several examples available, such as:
+
+1.  `spawn_npc.py`: This example spawns non-player characters (NPCs) in the simulator.
+2.  `manual_control.py`: This example shows how to control a vehicle manually using the keyboard.
+3.  `spawn_pedestrians.py`: This example spawns pedestrians in the simulator.
+4.  `lidar.py`: This example demonstrates how to use the LIDAR sensor to retrieve point cloud data.
+5.  `camera.py`: This example demonstrates how to use the camera sensor to retrieve RGB images and semantic segmentation maps.
+
+To run an example, you can navigate to the `PythonAPI/examples` directory and run the corresponding Python script using the following command:
+
+php
+
+`python3 <example_name>.py` 
+
+Replace `<example_name>` with the name of the example you want to run.
+
+Note that some examples require additional arguments to be passed to the script, such as the IP address and port number of the CARLA simulator. You can find information on the required arguments for each example in the comments at the top of the script.
+
+Once you run an example, it will start the CARLA simulator and perform the actions specified in the script. You can modify the script to customize the actions performed in the simulator or to retrieve different types of data from the sensors.
+
+## GUI of the Virtualization Platform 
+We built the graphical interface using PyQt5, which allows the user to interact with a simulation environment created with the CARLA Python API. The interface provides various functionalities such as selecting labels for city object detection, recording the simulation, and controlling the simulation's execution (start, pause, stop).
+
+The interface displays three different images, RGB, segmented, and bounding box. The RGB image displays the simulation's environment as seen by a camera. The segmented image shows the environment with different objects separated into classes using different colors. The bounding box image shows the RGB image with bounding boxes around the selected city objects.
+
+Additionally, the interface contains several buttons for adding, selecting, modifying, and removing events, as well as a timeline for displaying the recorded events. The user can select city object labels for detection using checkboxes provided in a group box.
+
+To run the GUI, follow the steps below:
+
+1.  First, ensure that you have successfully installed Carla and can execute the provided examples.
+    
+2.  Next, copy the "python" folder to your disk. It is recommended to copy it to the same level as the "examples" and "carla" folders in the "PythonAPI" directory. This is to ensure that the Carla Python modules are accessible from that location.
+    
+3.  Open a terminal window and navigate to the "python" folder that you just created using the `cd` command. For example:
+
+`cd /path/to/python` 
+
+Replace "/path/to/python" with the actual path to the "Carla/PythonAPI/python" folder on your disk.
+
+4.  Once you are in the "python" folder, run the GUI using the following command:
+
+`python Editor_UI.py` 
+
+This should launch the GUI and you should be able to use it to create scenarios in Carla. If you encounter any errors, ensure that Carla is properly installed and that you have copied the "python" folder to the correct location.
+
+
+
