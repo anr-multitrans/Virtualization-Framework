@@ -14,6 +14,8 @@ import os
 from queue import Queue
 from queue import Empty
 from collections import namedtuple
+import datetime
+import json
 
 # Sensor callback.
 # This is where you receive the sensor data and
@@ -116,7 +118,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.x=0
          # Set up the main window
-        self.setWindowTitle("MultiTrans Virtualization Framework")
+        self.scenario_name=''
+        self.scenario_folder=''
+        self.generate_Scenario_name()
+        
         self.setGeometry(100, 100, 800, 600)
         bb_drawn = True
         self.global_imabe_error=0
@@ -124,11 +129,12 @@ class MainWindow(QMainWindow):
         # Initialize the CARLA client and world
         self.client = carla.Client('localhost', 2000)
         self.client.set_timeout(30.0)
-        self.client.load_world('Town04')
+        self.client.load_world('Town05')
         self.world = self.client.get_world()
         #☺self.context= self.world.get_snapshot()
         self.camera_tick = 0
         self.ThreeD = False
+        self.ImageCounter=0
         #self.semantic_image= None
         # We create all the sensors and keep them in a list for convenience.
         self.synchro_list = []
@@ -146,6 +152,10 @@ class MainWindow(QMainWindow):
         # initiate bounding_box_labels
         self.selected_labels=selected_labels
         self.bb_labels= bb_labels
+        self.is_running= False
+        self.is_recording = False
+        self.is_step_by_step=False
+
         group_box = QGroupBox('City Object Labels')
         # Create the checkboxes and add them to the group box
         checkbox_layout =  QGridLayout()
@@ -205,16 +215,19 @@ class MainWindow(QMainWindow):
         # Set up the menu bar
         menu_bar = self.menuBar()
         scenario_menu = menu_bar.addMenu("Scenario")
-        start_action = scenario_menu.addAction("Start")
-        stop_action = scenario_menu.addAction("Stop")
-        pause_action = scenario_menu.addAction("Pause")
-        record_action = scenario_menu.addAction("Record")
-
+        self.start_action = scenario_menu.addAction("Start")
+        self.stop_action = scenario_menu.addAction("Stop")
+        self.pause_action = scenario_menu.addAction("Pause")
+        self.record_action = scenario_menu.addAction("Record")
+        self.start_action.setEnabled(True)
+        self.pause_action.setEnabled(False)
+        self.stop_action.setEnabled(False)
+        self.start_action.setEnabled(True)
         # Connect the menu bar actions to functions
-        start_action.triggered.connect(self.start_scenario)
-        stop_action.triggered.connect(self.stop_scenario)
-        pause_action.triggered.connect(self.pause_scenario)
-        record_action.triggered.connect(self.record_scenario)
+        self.start_action.triggered.connect(self.start_scenario)
+        self.stop_action.triggered.connect(self.stop_scenario)
+        self.pause_action.triggered.connect(self.pause_scenario)
+        self.record_action.triggered.connect(self.record_scenario)
 
         # Set up the layout for the main window
         central_widget = QWidget()
@@ -304,15 +317,40 @@ class MainWindow(QMainWindow):
         self.world.tick()
         self.new_vehicle.set_transform(carla.Transform(new_vehicle_location))
 
-
+    def generate_Scenario_name(self):
+        now = datetime.datetime.now()
+        self.scenario_name = "Scenario_" + now.strftime("%Y-%m-%d_%H-%M-%S")
+        self.scenario_folder= self.create_directory(self.scenario_name)
+        self.setWindowTitle("MultiTrans Virtualization Framework | " +  self.scenario_folder)
+        pass
     def start_scenario(self):
-        pass
+        
+        self.pause_action.setEnabled(True)
+        self.stop_action.setEnabled(True)
+        self.start_action.setEnabled(False)
+        self.is_running=True
+
     def stop_scenario(self):
-        pass
+        self.pause_action.setEnabled(False)
+        self.stop_action.setEnabled(False)
+        self.start_action.setEnabled(True)
+        self.is_running=False
+        self.generate_Scenario_name()
+        self.start_action.setText('Start')
+
     def pause_scenario(self):
-        pass
+        self.pause_action.setEnabled(False)
+        self.stop_action.setEnabled(True)
+        self.start_action.setEnabled(True)
+        self.start_action.setText('Resume')
+        self.is_running=False
     def record_scenario(self):
-        pass
+        if self.record_action.text()=='Record':
+            self.record_action.setText('Stop recording')
+        else:
+            self.record_action.setText('Record')
+        self.is_recording= not self.is_recording
+        
     def synchroTick(self):
         if(self.camera_tick == 3):
             self.world.tick()
@@ -328,58 +366,60 @@ class MainWindow(QMainWindow):
         print(self.selected_labels)
 
     def timerEvent(self, event):
-
-        self.world.tick()
-        w_frame = self.world.get_snapshot().frame
-        rgb_image=None
-        segmentation_image=None
-        boxes=None
-        transform =None
-        rgb_ref=None
-        self.x+=1
-        new_vehicle_location = self.vehicle.get_transform().location+ carla.Location(100-self.x,+4,0)
-        #self.new_vehicle.set_transform(carla.Transform(new_vehicle_location, self.vehicle.get_transform().rotation))
-        try:
-            
-            
-            #print("Try")
-            #print("sensors")
-            #print(self.synchro_list)
-            for _ in range(len(self.synchro_list)):
-                s_frame = synchro_queue.get(True, 10.0)
-                #print("    Frame: %d   Sensor: %s" % (s_frame[0], s_frame[1]))
-                if s_frame[1] == "rgb_camera":
-                    rgb_image=self.get_RGB_DATA(s_frame[2])
-                if s_frame[1] == "rgb_camera_ref":
-                    rgb_ref=self.update_rgb_camera_view(s_frame[2])
-                if s_frame[1] == "semantic_segmentation":
-                    segmentation_image=self.update_seg_camera_view(s_frame[2])
-                if s_frame[1] == "bounding_boxes":
-                    boxes= s_frame[2]
-                if s_frame[1] == "camera_transform":
-                    transform= s_frame[2]
-                #print(s_frame[1] )
-                #print(s_frame[2] )
-            if rgb_image!=None and boxes!=None and transform!=None :
-                #print(rgb_image.width)
-                if self.ThreeD:
-                    self.update_bounding_box_view_3D(self.rgb_camera,rgb_image,selected_labels)
+        #print(self.is_running)
+       # keyboard.wait('1')
+        if self.is_running:
+            self.world.tick()
+            w_frame = self.world.get_snapshot().frame
+            rgb_image=None
+            segmentation_image=None
+            boxes=None
+            transform =None
+            rgb_ref=None
+            self.x+=1
+            new_vehicle_location = self.vehicle.get_transform().location+ carla.Location(100-self.x,+4,0)
+            #self.new_vehicle.set_transform(carla.Transform(new_vehicle_location, self.vehicle.get_transform().rotation))
+            try:
+                
+                
+                #print("Try")
+                #print("sensors")
+                #print(self.synchro_list)
+                for _ in range(len(self.synchro_list)):
+                    s_frame = synchro_queue.get(True, 10.0)
+                    #print("    Frame: %d   Sensor: %s" % (s_frame[0], s_frame[1]))
+                    if s_frame[1] == "rgb_camera":
+                        rgb_image=self.get_RGB_DATA(s_frame[2])
+                    if s_frame[1] == "rgb_camera_ref":
+                        rgb_ref=self.update_rgb_camera_view(s_frame[2])
+                    if s_frame[1] == "semantic_segmentation":
+                        segmentation_image=self.update_seg_camera_view(s_frame[2])
+                    if s_frame[1] == "bounding_boxes":
+                        boxes= s_frame[2]
+                    if s_frame[1] == "camera_transform":
+                        transform= s_frame[2]
+                    #print(s_frame[1] )
+                    #print(s_frame[2] )
+                if rgb_image!=None and boxes!=None and transform!=None :
+                    #print(rgb_image.width)
+                    if self.ThreeD:
+                        self.update_bounding_box_view_3D(self.rgb_camera,rgb_image,selected_labels)
+                    else:
+                        self.update_bounding_box_view_smart(self.rgb_camera,rgb_image,segmentation_image,boxes,transform)
                 else:
-                    self.update_bounding_box_view_smart(self.rgb_camera,rgb_image,segmentation_image,boxes,transform)
-            else:
-                print("at least one of these data is missing:")
-                if rgb_image==None:
-                    print('rgb')
-                if segmentation_image==None:
-                    print('segmentation_image')
-                if boxes==None:
-                    print('boxes')
-                if transform==None:
-                    print('transform')
+                    print("at least one of these data is missing:")
+                    if rgb_image==None:
+                        print('rgb')
+                    if segmentation_image==None:
+                        print('segmentation_image')
+                    if boxes==None:
+                        print('boxes')
+                    if transform==None:
+                        print('transform')
 
-        except Empty:
-                pass
-        self.vehicle.set_autopilot(True)
+            except Empty:
+                    pass
+            self.vehicle.set_autopilot(True)
 
     def start_stop_camera(self):
         # Start or stop the camera movement
@@ -472,8 +512,8 @@ class MainWindow(QMainWindow):
 
         x_min_new = x_min + np.min(object_pixels_indices[:, 1])
         y_min_new = y_min + np.min(object_pixels_indices[:, 0])
-        x_max_new = x_min + np.max(object_pixels_indices[:, 1])
-        y_max_new = y_min + np.max(object_pixels_indices[:, 0])
+        x_max_new = x_min_new + np.max(object_pixels_indices[:, 1])
+        y_max_new = y_min_new + np.max(object_pixels_indices[:, 0])
 
         if x_max_new<0 or y_max_new<0 or x_min_new>sem_seg_image.width or y_min_new> sem_seg_image.height:
             return -1, -1, -1, -1
@@ -489,28 +529,52 @@ class MainWindow(QMainWindow):
 
         return x_min_new, y_min_new, x_max_new, y_max_new
 
+    def compute_bb_distance(self,camera_location,corners):
+        #corners = bb.get_world_vertices(carla.Transform())
+
+        # Compute the center of the bounding box in world coordinates
+        bounding_box_center = carla.Location()
+        for corner in corners:
+            bounding_box_center.x += corner.x
+            bounding_box_center.y += corner.y
+            bounding_box_center.z += corner.z
+        bounding_box_center.x /= len(corners)
+        bounding_box_center.y /= len(corners)
+        bounding_box_center.z /= len(corners)
+        distance = camera_location.distance(bounding_box_center)
+        return distance
+
     def update_bounding_box_view_smart(self, camera, image, semantic_image, bounding_box_set, transform):
+        json_array = []
         world_2_camera = np.array(transform.get_inverse_matrix())
         #print("world_2_camera")
         edges = [[0,1], [1,3], [3,2], [2,0], [0,4], [4,5], [5,1], [5,7], [7,6], [6,4], [6,2], [7,3]]
         img = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        rgb = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         #print("frombuffer")
         img = np.reshape(img, (image.height, image.width, 4))
+        rgb = np.reshape(rgb, (image.height, image.width, 4))
+        rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         #print("reshape")
         #ego_bb = self.vehicle.bounding_box
         processed_boxes = {label: [] for label in bounding_box_set.keys()}
         for label, bb_set in bounding_box_set.items():
             for bb in bb_set:
                 corners = bb.get_world_vertices(carla.Transform())
+                distance=self.compute_bb_distance(camera.get_transform().location,corners)
                 corners = [self.get_image_point(corner, self.K, world_2_camera) for corner in corners]
+
 
                 corners = np.array(corners, dtype=int)
                 x_min, y_min = np.min(corners, axis=0)
-                if x_min<0:
-                    x_min=0
-                if y_min <0:
-                    y_min=0
                 x_max, y_max = np.max(corners, axis=0)
+                if x_max - x_min >= image.width or y_max - y_min >= image.height:
+                    continue
+                if x_min<0 and x_max>0:
+                    x_min=0
+                if y_min <0 and y_max>0:
+                    y_min=0
+               
 
                 if label in ['Bicycle','Motorcycle','Rider','Pedestrians']:
                     #w_max = (f * (x_max - x_min)) / z
@@ -531,13 +595,13 @@ class MainWindow(QMainWindow):
                 # Check if the bounding box is completely included in any previously processed box
                 included = False
                 for processed_bb in processed_boxes[label]:
-                    if x_min >= processed_bb[0] and x_max <= processed_bb[2] and y_min >= processed_bb[1] and y_max <= processed_bb[3]:
+                    if x_min >= processed_bb[0] and x_max <= processed_bb[2] and y_min >= processed_bb[1] and y_max <= processed_bb[3] and processed_bb[4]<distance:
                         included = True
                         break
 
                 if not included:
                     # Process the bounding box if it's not included in any previously processed box
-                    processed_boxes[label].append((x_min, y_min, x_max, y_max))
+                    processed_boxes[label].append((x_min, y_min, x_max, y_max,distance))
                     # Check if bounding box is inside image dimensions
                     if x_min >= img.shape[1] or x_max < 0. or y_min >= img.shape[0] or y_max < 0:
                         continue
@@ -551,11 +615,27 @@ class MainWindow(QMainWindow):
 
                         #label = 'vehicle'  # replace with the appropriate label for each object type
                         cv2.putText(img, label, (x_min_new, y_min_new-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, object_color, 1)
+                        json_entry = {"label": label, "x_min": int(x_min_new), "y_min": int(y_min_new), "x_max": int(x_min_new), "y_max":int(y_max_new)}
+                        json_array.append(json_entry)
 
+        if self.is_running and self.is_recording:
+
+            json_string = json.dumps(json_array)
+            image_path=os.path.join(self.scenario_folder, 'image_{:06d}_rgb.png'.format(self.ImageCounter))
+            cv2.imwrite(image_path, rgb)
+
+            image_seg_path=os.path.join(self.scenario_folder, 'image_{:06d}_seg.png'.format(self.ImageCounter))
+            semantic_image.save_to_disk(image_seg_path) 
+            image_bb_path=os.path.join(self.scenario_folder, 'image_{:06d}_bbs.png'.format(self.ImageCounter))
+            cv2.imwrite(image_bb_path, img)
+            json_path=os.path.join(self.scenario_folder, 'image_{:06d}_bbs.json'.format(self.ImageCounter))
+            with open(json_path, "w") as f:
+                json.dump(json.loads(json_string), f)
         # Convert the image back to a QImage object and display it
         qimage = QtGui.QImage(img.data, image.width, image.height, QtGui.QImage.Format_RGB32)
         pixmap = QtGui.QPixmap.fromImage(qimage)
         self.label_bounding.setPixmap(pixmap)
+        self.ImageCounter += 1
 
     def update_bounding_box_view_3D(self, camera, image, objects):
         # Convert the Image object to a QImage object
@@ -686,6 +766,12 @@ class MainWindow(QMainWindow):
         'Rider' : (4,2.5)
 
     }
+    def create_directory(self, scenario_name):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        exec_path= os.path.join(script_dir,'execution')
+        dir_path = os.path.join(exec_path, scenario_name)
+        os.makedirs(dir_path, exist_ok=True)
+        return os.path.abspath(dir_path)
 
     def semsegConversion(self,qimage):
         # Define a dictionary that maps label colors to class names
