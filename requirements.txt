@@ -1,0 +1,7 @@
+PyQt5
+carla
+keyboard
+matplotlib
+numpy
+opencv-python
+psutil
