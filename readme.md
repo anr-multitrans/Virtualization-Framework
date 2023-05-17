@@ -35,7 +35,7 @@ Additionally, the interface contains several buttons for adding, selecting, modi
 
 `git clone https://github.com/anr-multitrans/Virtualization-Framework.git` 
 
-5.  Open the terminal and navigate to the directory where you cloned the repository.
+5.  Open the terminal and navigate to Python directory inside the directory where you cloned the repository.
     
 6.  Run the following command to launch the framework:
 
