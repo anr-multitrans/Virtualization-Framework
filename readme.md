@@ -22,7 +22,7 @@ Additionally, the interface contains several buttons for adding, selecting, modi
 
 1.  Install Python 3.x if it is not already installed. You can download the latest version from the official website: [https://www.python.org/downloads/](https://www.python.org/downloads/)
     
-2.  Install CARLA simulator by following the instructions on their official website: [https://carla.org/2021/04/26/release-0.9.11/](https://carla.org/2021/04/26/release-0.9.11/)
+2.  Install CARLA simulator by following the instructions on their official website: [https://carla.readthedocs.io/en/latest/start_quickstart/](https://carla.readthedocs.io/en/latest/start_quickstart/)
 
 3.  Install required packages using pip:
     
