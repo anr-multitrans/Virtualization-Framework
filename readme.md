@@ -24,22 +24,19 @@ Additionally, the interface contains several buttons for adding, selecting, modi
     
 2.  Install CARLA simulator by following the instructions on their official website: [https://carla.readthedocs.io/en/latest/start_quickstart/](https://carla.readthedocs.io/en/latest/start_quickstart/)
 
-3.  Install required packages using pip:
-    
-
-
-``pip install -r requirements.txt`` 
-
-    
-4.  Clone the repository:
+3.  Clone the repository:
 
 `git clone https://github.com/anr-multitrans/Virtualization-Framework.git` 
 
-5.  Open the terminal and navigate to Python directory inside the directory where you cloned the repository.
+4.  Open the terminal and navigate to the directory where you cloned the repository.
+
+5.  Install required packages using pip:
+    
+``pip install -r requirements.txt`` 
     
 6.  Run the following command to launch the framework:
 
-`python Editor_UI.py` 
+`python Python/Editor_UI.py` 
 
 Note: The script will check if CARLA simulator is running, if not it will pass a command to launch it and wait for its availability for connecting clients before launching the framework.
 
