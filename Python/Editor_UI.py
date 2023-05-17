@@ -1,8 +1,12 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QMenu, QVBoxLayout, QSizePolicy, QMessageBox, QWidget, QPushButton, QFileDialog, QLabel, QHBoxLayout, QComboBox, QGridLayout, QCheckBox, QGroupBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QMenu, QVBoxLayout, QSizePolicy, QMessageBox, QWidget, QPushButton, QFileDialog, QLabel, QHBoxLayout, QComboBox, QGridLayout, QCheckBox, QGroupBox, QLineEdit, QProgressBar,QRadioButton,QMessageBox
+from PyQt5.QtCore import QUrl
+from PyQt5.QtGui import QDesktopServices, QIcon
+
 from PyQt5.QtGui import QIcon, QImage, QPixmap
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5 import QtGui
+import time
 from carla import ColorConverter
 import carla
 import random
@@ -14,7 +18,62 @@ import os
 from queue import Queue
 from queue import Empty
 from collections import namedtuple
+import datetime
+import json
+import socket
+import subprocess
+import platform
+import threading
+import configparser
+import psutil
+import copy
 
+
+class RecordThread(QThread):
+    finished = pyqtSignal()
+    error = pyqtSignal(str)
+
+    def __init__(self, json_array, rgb, semantic_image, img_bb, scenario_folder, image_counter):
+        super().__init__()
+        self.json_array = json_array
+        self.rgb = rgb
+        self.semantic_image = semantic_image
+        self.img_bb = img_bb
+        self.scenario_folder = scenario_folder
+        self.image_counter = image_counter
+
+    def run(self):
+        try:
+
+            json_string = json.dumps(self.json_array)
+            image_path=os.path.join(self.scenario_folder, 'image_{:06d}_rgb.png'.format(self.image_counter))
+            cv2.imwrite(image_path, self.rgb)
+
+            image_seg_path=os.path.join(self.scenario_folder, 'image_{:06d}_seg.png'.format(self.image_counter))
+            self.semantic_image.save_to_disk(image_seg_path) 
+            image_bb_path=os.path.join(self.scenario_folder, 'image_{:06d}_bbs.png'.format(self.image_counter))
+            cv2.imwrite(image_bb_path, self.img_bb)
+            json_path=os.path.join(self.scenario_folder, 'image_{:06d}_bbs.json'.format(self.image_counter))
+            try:
+                with open(json_path, "w") as f:
+                    json.dump(json.loads(json_string), f)
+            except Exception as e1:
+                pass
+        except Exception as e:
+            self.error.emit(str(e))
+        finally:
+            self.finished.emit()
+def copyImageData(source_image):
+    source_array = np.array(source_image.raw_data)
+    #source_array = source_array.reshape((source_image.height, source_image.width, 4))
+
+    # Create a new RGB image
+    new_image = np.zeros(source_array.shape,dtype=np.uint8)#np.zeros((source_image.height, source_image.width, 3), dtype=np.uint8)
+
+    # Copy the pixel values from source_array to new_image
+    new_image[:] = source_array[:]
+    #new_image[:] = source_array[:, :, :3]
+    return new_image
 # Sensor callback.
 # This is where you receive the sensor data and
 # process it as you liked and the important part is that,
@@ -22,11 +81,11 @@ from collections import namedtuple
 synchro_queue = Queue()
 
 ImageObj = namedtuple('ImageObj', ['raw_data', 'width', 'height', 'fov'])
-selected_labels=[]
+selected_labels=['Bicycle','Bus','Car','Motorcycle','Rider','Static','traffic_light','traffic_sign','Truck']
 bb_labels= {
-    'Any' : carla.CityObjectLabel.Any,
+    #'Any' : carla.CityObjectLabel.Any,
     'Bicycle' : carla.CityObjectLabel.Bicycle,
-    'Bridge' : carla.CityObjectLabel.Bridge,
+    #'Bridge' : carla.CityObjectLabel.Bridge,
     'Buildings' : carla.CityObjectLabel.Buildings,
     'Bus' : carla.CityObjectLabel.Bus,
     'Car' : carla.CityObjectLabel.Car,
@@ -35,10 +94,10 @@ bb_labels= {
     'Ground' : carla.CityObjectLabel.Ground,
     'GuardRail' : carla.CityObjectLabel.GuardRail,
     'Motorcycle' : carla.CityObjectLabel.Motorcycle,
-    'NONE' : carla.CityObjectLabel.NONE,
+    #'NONE' : carla.CityObjectLabel.NONE,
     'Other' : carla.CityObjectLabel.Other,
     'Pedestrians' : carla.CityObjectLabel.Pedestrians,
-    'Poles' : carla.CityObjectLabel.Poles,
+    #'Poles' : carla.CityObjectLabel.Poles,
     'RailTrack' : carla.CityObjectLabel.RailTrack,
     'Rider' : carla.CityObjectLabel.Rider,
     'RoadLines' : carla.CityObjectLabel.RoadLines,
@@ -49,7 +108,7 @@ bb_labels= {
     'Terrain' : carla.CityObjectLabel.Terrain,
     'traffic_light' : carla.CityObjectLabel.TrafficLight,
     'traffic_sign' : carla.CityObjectLabel.TrafficSigns,
-    'Train' : carla.CityObjectLabel.Train,
+    #'Train' : carla.CityObjectLabel.Train,
     'Truck' : carla.CityObjectLabel.Truck,
     'Vegetation' : carla.CityObjectLabel.Vegetation,
     'Walls' : carla.CityObjectLabel.Walls,
@@ -113,10 +172,16 @@ def sensor_callback(world, actor, sensor_data, synchro_queue, sensor_name,K=None
 
 class MainWindow(QMainWindow):
     def __init__(self):
+        self.scenario_length=1000
+        self.scenario_tick = 0
+        self.progress_updated = pyqtSignal(int)
         super().__init__()
         self.x=0
          # Set up the main window
-        self.setWindowTitle("MultiTrans Virtualization Framework")
+        self.scenario_name=''
+        self.scenario_folder=''
+        self.generate_Scenario_name()
+        
         self.setGeometry(100, 100, 800, 600)
         bb_drawn = True
         self.global_imabe_error=0
@@ -124,11 +189,12 @@ class MainWindow(QMainWindow):
         # Initialize the CARLA client and world
         self.client = carla.Client('localhost', 2000)
         self.client.set_timeout(30.0)
-        self.client.load_world('Town04')
+        self.client.load_world('Town05')
         self.world = self.client.get_world()
         #☺self.context= self.world.get_snapshot()
         self.camera_tick = 0
-        self.ThreeD = False
+        self.ThreeD = True
+        self.ImageCounter=0
         #self.semantic_image= None
         # We create all the sensors and keep them in a list for convenience.
         self.synchro_list = []
@@ -146,12 +212,17 @@ class MainWindow(QMainWindow):
         # initiate bounding_box_labels
         self.selected_labels=selected_labels
         self.bb_labels= bb_labels
+        self.is_running= False
+        self.is_recording = True
+        self.is_step_by_step=False
+
         group_box = QGroupBox('City Object Labels')
         # Create the checkboxes and add them to the group box
         checkbox_layout =  QGridLayout()
         for i, (label, value) in enumerate(bb_labels.items()):
             checkbox = QCheckBox(label)
-            checkbox.setChecked(False)
+            checkbox.setChecked(label in selected_labels)
+            #self.selected_labels.append(label)
             checkbox.stateChanged.connect(lambda state, label=label: self.checkbox_state_changed(state, label))
             row = i // 4  # display 4 checkboxes per row
             col = i % 4
@@ -186,43 +257,110 @@ class MainWindow(QMainWindow):
         self.label_bounding = QLabel(self)
         
         # Set up the palette of editing a scenario
-        add_btn = QPushButton(QIcon("icons/add.png"), "")
-        select_btn = QPushButton(QIcon("icons/select.png"), "")
-        remove_btn = QPushButton(QIcon("icons/remove.png"), "")
-        modify_btn = QPushButton(QIcon("icons/modify.png"), "")
+        self.rec_btn = QPushButton(QIcon("icons/ON.png"), "")
+        self.rec_btn.setFixedSize(225, 100)  # set button size to 50x50 pixels
+        self.rec_btn.setIconSize(self.rec_btn.size())
+        self.rec_btn.setStyleSheet("QPushButton { border: none; }")
+        self.recording_label = QLabel('Scenario recording is : ')
+        recoring_layout = QHBoxLayout()
+        recoring_layout.addStretch(1)
+        recoring_layout.addWidget(self.recording_label)
+        recoring_layout.addWidget(self.rec_btn)
+        recording_widget = QWidget()
+        self.rec_btn.clicked.connect(self.record_scenario)
+        self.play_btn = QPushButton(QIcon("icons/play.png"), "")
+        self.play_btn.setFixedSize(100, 100)  # set button size to 50x50 pixels
+        self.play_btn.setIconSize(self.play_btn.size())
+        self.play_btn.setStyleSheet("QPushButton { border: none; }")
+        self.play_btn.clicked.connect(self.start_scenario)
+        self.pause_btn = QPushButton(QIcon("icons/pause.png"), "")
+        self.pause_btn.setFixedSize(100, 100)  # set button size to 50x50 pixels
+        self.pause_btn.setIconSize(self.pause_btn.size())
+        self.pause_btn.setStyleSheet("QPushButton { border: none; }")
+        self.pause_btn.clicked.connect(self.pause_scenario)
+        self.stop_btn = QPushButton(QIcon("icons/stop.png"), "")
+        self.stop_btn.setFixedSize(100, 100)  # set button size to 50x50 pixels
+        self.stop_btn.setIconSize(self.stop_btn.size())
+        self.stop_btn.setStyleSheet("QPushButton { border: none; }")
+        self.stop_btn.clicked.connect(self.stop_scenario)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+
+        self.textbox = QLineEdit('output path: '+ self.scenario_folder)
+        self.textbox.setReadOnly(True)
+        # create a QPushButton for the folder selection button
+        self.folder_button = QPushButton('Change output directory')
+        self.folder_button.clicked.connect(self.select_folder)
+        
+        # create a horizontal layout for the textbox and button
+        hbox = QHBoxLayout()
+        hbox.addWidget(self.textbox)
+        hbox.addWidget(self.folder_button)
+        
         timeline_btn = QPushButton(QIcon("icons/timeline.png"), "")
         new_event_btn = QPushButton(QIcon("icons/new_event.png"), "")
         palette_layout = QHBoxLayout()
-        palette_layout.addWidget(add_btn)
-        palette_layout.addWidget(select_btn)
-        palette_layout.addWidget(remove_btn)
-        palette_layout.addWidget(modify_btn)
-        palette_layout.addWidget(timeline_btn)
-        palette_layout.addWidget(new_event_btn)
+        recording_widget.setLayout(recoring_layout)
+        #addWidget(self.rec_btn)
+        palette_layout.addWidget(self.play_btn)
+        palette_layout.addWidget(self.pause_btn)
+        palette_layout.addWidget(self.stop_btn)
+        #palette_layout.addWidget(timeline_btn)
+        #palette_layout.addWidget(new_event_btn)
         palette_widget = QWidget()
         palette_widget.setLayout(palette_layout)
 
         # Set up the menu bar
         menu_bar = self.menuBar()
         scenario_menu = menu_bar.addMenu("Scenario")
-        start_action = scenario_menu.addAction("Start")
-        stop_action = scenario_menu.addAction("Stop")
-        pause_action = scenario_menu.addAction("Pause")
-        record_action = scenario_menu.addAction("Record")
-
+        self.start_action = scenario_menu.addAction("Start")
+        self.stop_action = scenario_menu.addAction("Stop")
+        self.pause_action = scenario_menu.addAction("Pause")
+        self.record_action = scenario_menu.addAction("Stop recording")
+        self.start_action.setEnabled(True)
+        self.pause_action.setEnabled(False)
+        self.stop_action.setEnabled(False)
+        self.start_action.setEnabled(True)
         # Connect the menu bar actions to functions
-        start_action.triggered.connect(self.start_scenario)
-        stop_action.triggered.connect(self.stop_scenario)
-        pause_action.triggered.connect(self.pause_scenario)
-        record_action.triggered.connect(self.record_scenario)
+        self.start_action.triggered.connect(self.start_scenario)
+        self.stop_action.triggered.connect(self.stop_scenario)
+        self.pause_action.triggered.connect(self.pause_scenario)
+        self.record_action.triggered.connect(self.record_scenario)
 
+        self.radio2D = QRadioButton('2D')
+        self.radio3D = QRadioButton('3D')
+        #self.radio3 = QRadioButton('Radio 3')
+
+        # Set radio1 as the default selected button
+        self.radio3D.setChecked(True)
+
+        # Create a group box and add the radio buttons to it
+        group_Radio_box = QGroupBox("Bounding boxes mode")
+        vbox = QVBoxLayout()
+        vbox.addWidget(self.radio2D)
+        vbox.addWidget(self.radio3D)
+        
+        group_Radio_box.setLayout(vbox)
+
+        # Create a layout and add the group box to it
+        main_bb_vbox = QVBoxLayout()
+        main_bb_vbox.addWidget(group_Radio_box)
+        hbox = QHBoxLayout()
+        hbox.addWidget(self.textbox)
+        hbox.addWidget(self.folder_button)
         # Set up the layout for the main window
         central_widget = QWidget()
         layout = QGridLayout()
         layout.addWidget(self.label_rgb, 0, 0)
         layout.addWidget(self.label_seg, 0, 1)
         layout.addWidget(self.label_bounding, 0, 2)
-        layout.addWidget(palette_widget, 1, 0, 1, 3)
+        layout.addLayout(hbox, 1,0)
+        layout.addLayout(main_bb_vbox,1,2)
+        layout.addWidget(self.progress_bar, 1, 1)
+        layout.addWidget(recording_widget,2,1,1,1)
+        layout.addWidget(palette_widget, 3, 0, 1, 3)
         layout.addWidget(group_box)
         central_widget.setLayout(layout)
         self.setCentralWidget(central_widget)
@@ -304,15 +442,109 @@ class MainWindow(QMainWindow):
         self.world.tick()
         self.new_vehicle.set_transform(carla.Transform(new_vehicle_location))
 
+        self.data = []
 
+    def record_tick(self, json_array, rgb, semantic_image, img_bb):
+        if self.is_running and self.is_recording:
+            # Create a dictionary with the data to be stored
+            #rgb_data=self.get_RGB_DATA(rgb)
+            data_dict = {
+                "json_array": json_array,
+                "rgb": rgb,
+                "semantic_image": semantic_image,
+                "img_bb": img_bb,
+            }
+            # Append the data dictionary to the list
+            self.data.append(data_dict)
+
+    def write_data_to_disk(self):
+        # Iterate over the data list and write each item to disk
+        print('writing')
+       # print(length(self.data))
+        for i, data_dict in enumerate(self.data):
+            json_path = os.path.join(self.scenario_folder, 'image_{:06d}_bbs.json'.format(i))
+            image_path = os.path.join(self.scenario_folder, 'image_{:06d}_rgb.png'.format(i))
+            image_seg_path = os.path.join(self.scenario_folder, 'image_{:06d}_seg.png'.format(i))
+            image_bb_path = os.path.join(self.scenario_folder, 'image_{:06d}_bbs.png'.format(i))
+            with open(json_path, "w") as f:
+                json.dump(data_dict["json_array"], f)
+            cv2.imwrite(image_path, data_dict["rgb"])
+            data_dict["semantic_image"].save_to_disk(image_seg_path)
+            cv2.imwrite(image_bb_path, data_dict["img_bb"])
+        # Clear the data list
+        self.data = []
+    #    self.record_thread = None
+#
+    #def record_tick(self, json_array, rgb, semantic_image, img_bb):
+    #    if self.is_running and self.is_recording:
+    #        self.record_thread = RecordThread(json_array, rgb, semantic_image, img_bb, self.scenario_folder, self.ImageCounter)
+    #        self.record_thread.finished.connect(self.record_finished)
+    #        self.record_thread.error.connect(self.record_error)
+    #        self.record_thread.start()
+
+    def record_finished(self):
+        self.record_thread = None
+
+    def record_error(self, error_message):
+        print(f"Recording error: {error_message}")
+    def closeEvent(self, event):
+        # This function will be called when the window is closed
+        # Put your code here
+        print("Window is closing")
+        settings = self.world.get_settings()
+        settings.synchronous_mode = False
+        self.world.apply_settings(settings)
+        self.client.disconnect()
+        close_carla_server()
+        event.accept()  # Accept the event to actually close the window
+    def select_folder(self):
+        # open the file dialog and get the selected folder path
+        folder_path = QFileDialog.getExistingDirectory(self, 'Select Folder', os.path.expanduser('~'))
+        
+        # update the value of the textbox with the selected folder path
+        if folder_path:
+            self.scenario_folder= folder_path
+            self.textbox.setText('output path: '+ self.scenario_folde)
+    def generate_Scenario_name(self):
+        now = datetime.datetime.now()
+        self.scenario_name = "Scenario_" + now.strftime("%Y-%m-%d_%H-%M-%S")
+        self.scenario_folder= self.create_directory(self.scenario_name)
+        self.setWindowTitle("MultiTrans Virtualization Framework | " +  self.scenario_folder)
+        pass
     def start_scenario(self):
-        pass
+        
+        self.pause_action.setEnabled(True)
+        self.stop_action.setEnabled(True)
+        self.start_action.setEnabled(False)
+        self.folder_button.setEnabled(False)
+        self.is_running=True
+        #self.progress_updated.connect(self.update_progress)
+
     def stop_scenario(self):
-        pass
+        self.pause_action.setEnabled(False)
+        self.stop_action.setEnabled(False)
+        self.start_action.setEnabled(True)
+        self.is_running=False
+        self.write_data_to_disk()
+        self.generate_Scenario_name()
+        self.start_action.setText('Start')
+        self.scenario_tick=0
+
     def pause_scenario(self):
-        pass
+        self.pause_action.setEnabled(False)
+        self.stop_action.setEnabled(True)
+        self.start_action.setEnabled(True)
+        self.start_action.setText('Resume')
+        self.is_running=False
     def record_scenario(self):
-        pass
+        if self.record_action.text()=='Record':
+            self.record_action.setText('Stop recording')
+            self.rec_btn.setIcon(QIcon("icons/ON.png"))
+        else:
+            self.record_action.setText('Record')
+            self.rec_btn.setIcon(QIcon("icons/OFF.png"))
+        self.is_recording= not self.is_recording
+        
     def synchroTick(self):
         if(self.camera_tick == 3):
             self.world.tick()
@@ -328,71 +560,81 @@ class MainWindow(QMainWindow):
         print(self.selected_labels)
 
     def timerEvent(self, event):
-
-        self.world.tick()
-        w_frame = self.world.get_snapshot().frame
-        rgb_image=None
-        segmentation_image=None
-        boxes=None
-        transform =None
-        rgb_ref=None
-        self.x+=1
-        new_vehicle_location = self.vehicle.get_transform().location+ carla.Location(100-self.x,+4,0)
-        #self.new_vehicle.set_transform(carla.Transform(new_vehicle_location, self.vehicle.get_transform().rotation))
-        try:
-            
-            
-            #print("Try")
-            #print("sensors")
-            #print(self.synchro_list)
-            for _ in range(len(self.synchro_list)):
-                s_frame = synchro_queue.get(True, 10.0)
-                #print("    Frame: %d   Sensor: %s" % (s_frame[0], s_frame[1]))
-                if s_frame[1] == "rgb_camera":
-                    rgb_image=self.get_RGB_DATA(s_frame[2])
-                if s_frame[1] == "rgb_camera_ref":
-                    rgb_ref=self.update_rgb_camera_view(s_frame[2])
-                if s_frame[1] == "semantic_segmentation":
-                    segmentation_image=self.update_seg_camera_view(s_frame[2])
-                if s_frame[1] == "bounding_boxes":
-                    boxes= s_frame[2]
-                if s_frame[1] == "camera_transform":
-                    transform= s_frame[2]
-                #print(s_frame[1] )
-                #print(s_frame[2] )
-            if rgb_image!=None and boxes!=None and transform!=None :
-                #print(rgb_image.width)
-                if self.ThreeD:
-                    self.update_bounding_box_view_3D(self.rgb_camera,rgb_image,selected_labels)
+        #print(self.is_running)
+        #keyboard.wait('1')
+        if self.is_running and self.scenario_tick>= self.scenario_length:
+            self.stop_scenario()
+        progress=self.scenario_tick *100 /self.scenario_length
+        self.progress_bar.setValue(progress)
+        if self.is_running:
+            self.world.tick()
+            w_frame = self.world.get_snapshot().frame
+            rgb_image=None
+            segmentation_image=None
+            boxes=None
+            transform =None
+            rgb_ref=None
+            self.x+=1
+            new_vehicle_location = self.vehicle.get_transform().location+ carla.Location(100-self.x,+4,0)
+            #self.new_vehicle.set_transform(carla.Transform(new_vehicle_location, self.vehicle.get_transform().rotation))
+            try:
+                
+                
+                #print("Try")
+                #print("sensors")
+                #print(self.synchro_list)
+                for _ in range(len(self.synchro_list)):
+                    s_frame = synchro_queue.get(True, 10.0)
+                    #print("    Frame: %d   Sensor: %s" % (s_frame[0], s_frame[1]))
+                    if s_frame[1] == "rgb_camera":
+                        rgb_image=self.get_RGB_DATA(s_frame[2])
+                    if s_frame[1] == "rgb_camera_ref":
+                        rgb_ref=self.update_rgb_camera_view(s_frame[2])
+                    if s_frame[1] == "semantic_segmentation":
+                        segmentation_image=self.update_seg_camera_view(s_frame[2])
+                    if s_frame[1] == "bounding_boxes":
+                        boxes= s_frame[2]
+                    if s_frame[1] == "camera_transform":
+                        transform= s_frame[2]
+                    #print(s_frame[1] )
+                    #print(s_frame[2] )
+                if rgb_image!=None and boxes!=None and transform!=None :
+                    #print(rgb_image.width)
+                    if self.ThreeD:
+                        self.update_bounding_box_view_3D(self.rgb_camera,rgb_image,segmentation_image,boxes,transform)
+                    else:
+                        self.update_bounding_box_view_smart(self.rgb_camera,rgb_image,segmentation_image,boxes,transform)
                 else:
-                    self.update_bounding_box_view_smart(self.rgb_camera,rgb_image,segmentation_image,boxes,transform)
-            else:
-                print("at least one of these data is missing:")
-                if rgb_image==None:
-                    print('rgb')
-                if segmentation_image==None:
-                    print('segmentation_image')
-                if boxes==None:
-                    print('boxes')
-                if transform==None:
-                    print('transform')
+                    print("at least one of these data is missing:")
+                    if rgb_image==None:
+                        print('rgb')
+                    if segmentation_image==None:
+                        print('segmentation_image')
+                    if boxes==None:
+                        print('boxes')
+                    if transform==None:
+                        print('transform')
 
-        except Empty:
-                pass
-        self.vehicle.set_autopilot(True)
+                
+                self.scenario_tick+=1
+
+            except Empty:
+                    pass
+            self.vehicle.set_autopilot(True)
 
     def start_stop_camera(self):
         # Start or stop the camera movement
         if self.running:
             self.camera.stop()
-            self.button.setText('Start')
+            self.folder_button.setText('Start')
         else:
             self.camera.listen(lambda data: self.update_camera_view(data))
-            self.button.setText('Stop')
+            self.folder_button.setText('Stop')
         self.running = not self.running
 
     def get_RGB_DATA(self,image):
-        new_raw_data = image.raw_data#bytearray(image.raw_data)
+        new_raw_data = copyImageData(image)
+        #copy.deepcopy(image.raw_data)#bytearray(image.raw_data)
         new_image = ImageObj(raw_data=new_raw_data, width=image.width, height=image.height,fov=image.fov)
         return new_image
 
@@ -472,8 +714,8 @@ class MainWindow(QMainWindow):
 
         x_min_new = x_min + np.min(object_pixels_indices[:, 1])
         y_min_new = y_min + np.min(object_pixels_indices[:, 0])
-        x_max_new = x_min + np.max(object_pixels_indices[:, 1])
-        y_max_new = y_min + np.max(object_pixels_indices[:, 0])
+        x_max_new = x_min_new + np.max(object_pixels_indices[:, 1])
+        y_max_new = y_min_new + np.max(object_pixels_indices[:, 0])
 
         if x_max_new<0 or y_max_new<0 or x_min_new>sem_seg_image.width or y_min_new> sem_seg_image.height:
             return -1, -1, -1, -1
@@ -489,28 +731,52 @@ class MainWindow(QMainWindow):
 
         return x_min_new, y_min_new, x_max_new, y_max_new
 
+    def compute_bb_distance(self,camera_location,corners):
+        #corners = bb.get_world_vertices(carla.Transform())
+
+        # Compute the center of the bounding box in world coordinates
+        bounding_box_center = carla.Location()
+        for corner in corners:
+            bounding_box_center.x += corner.x
+            bounding_box_center.y += corner.y
+            bounding_box_center.z += corner.z
+        bounding_box_center.x /= len(corners)
+        bounding_box_center.y /= len(corners)
+        bounding_box_center.z /= len(corners)
+        distance = camera_location.distance(bounding_box_center)
+        return distance
+
     def update_bounding_box_view_smart(self, camera, image, semantic_image, bounding_box_set, transform):
+        json_array = []
         world_2_camera = np.array(transform.get_inverse_matrix())
         #print("world_2_camera")
         edges = [[0,1], [1,3], [3,2], [2,0], [0,4], [4,5], [5,1], [5,7], [7,6], [6,4], [6,2], [7,3]]
         img = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        rgb = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         #print("frombuffer")
         img = np.reshape(img, (image.height, image.width, 4))
+        rgb = np.reshape(rgb, (image.height, image.width, 4))
+        rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         #print("reshape")
         #ego_bb = self.vehicle.bounding_box
         processed_boxes = {label: [] for label in bounding_box_set.keys()}
         for label, bb_set in bounding_box_set.items():
             for bb in bb_set:
                 corners = bb.get_world_vertices(carla.Transform())
+                distance=self.compute_bb_distance(camera.get_transform().location,corners)
                 corners = [self.get_image_point(corner, self.K, world_2_camera) for corner in corners]
+
 
                 corners = np.array(corners, dtype=int)
                 x_min, y_min = np.min(corners, axis=0)
-                if x_min<0:
-                    x_min=0
-                if y_min <0:
-                    y_min=0
                 x_max, y_max = np.max(corners, axis=0)
+                if x_max - x_min >= image.width or y_max - y_min >= image.height:
+                    continue
+                if x_min<0 and x_max>0:
+                    x_min=0
+                if y_min <0 and y_max>0:
+                    y_min=0
+               
 
                 if label in ['Bicycle','Motorcycle','Rider','Pedestrians']:
                     #w_max = (f * (x_max - x_min)) / z
@@ -531,13 +797,13 @@ class MainWindow(QMainWindow):
                 # Check if the bounding box is completely included in any previously processed box
                 included = False
                 for processed_bb in processed_boxes[label]:
-                    if x_min >= processed_bb[0] and x_max <= processed_bb[2] and y_min >= processed_bb[1] and y_max <= processed_bb[3]:
+                    if x_min >= processed_bb[0] and x_max <= processed_bb[2] and y_min >= processed_bb[1] and y_max <= processed_bb[3] and processed_bb[4]<distance:
                         included = True
                         break
 
                 if not included:
                     # Process the bounding box if it's not included in any previously processed box
-                    processed_boxes[label].append((x_min, y_min, x_max, y_max))
+                    processed_boxes[label].append((x_min, y_min, x_max, y_max,distance))
                     # Check if bounding box is inside image dimensions
                     if x_min >= img.shape[1] or x_max < 0. or y_min >= img.shape[0] or y_max < 0:
                         continue
@@ -551,73 +817,110 @@ class MainWindow(QMainWindow):
 
                         #label = 'vehicle'  # replace with the appropriate label for each object type
                         cv2.putText(img, label, (x_min_new, y_min_new-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, object_color, 1)
+                        json_entry = {"label": label, "x_min": int(x_min_new), "y_min": int(y_min_new), "x_max": int(x_min_new), "y_max":int(y_max_new)}
+                        json_array.append(json_entry)
 
+        self.record_tick(json_array,rgb,semantic_image,img)
         # Convert the image back to a QImage object and display it
         qimage = QtGui.QImage(img.data, image.width, image.height, QtGui.QImage.Format_RGB32)
         pixmap = QtGui.QPixmap.fromImage(qimage)
         self.label_bounding.setPixmap(pixmap)
+        self.ImageCounter += 1
 
-    def update_bounding_box_view_3D(self, camera, image, objects):
+    def update_bounding_box_view_3D(self, camera, image, semantic_image, bounding_box_set, transform):
         # Convert the Image object to a QImage object
          # Define percentage to reduce bounding box size by
         reduction_percentage = 0.1
-
+        json_array = []
         world_2_camera = np.array(camera.get_transform().get_inverse_matrix())
         edges = [[0,1], [1,3], [3,2], [2,0], [0,4], [4,5], [5,1], [5,7], [7,6], [6,4], [6,2], [7,3]]
-        img = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        img = np.frombuffer(copyImageData(image), dtype=np.dtype("uint8"))#np.frombuffer(copy.deepcopy(image.raw_data), dtype=np.dtype("uint8"))
+        rgb = np.frombuffer(copyImageData(image), dtype=np.dtype("uint8"))#np.frombuffer(copy.deepcopy(image.raw_data), dtype=np.dtype("uint8"))
+        rgb = np.reshape(rgb, (image.height, image.width, 4))
+        #rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         img = np.reshape(img, (image.height, image.width, 4))
         #carla.CityObjectLabel.Car
-        for label in objects:
-            bounding_box_set = self.world.get_level_bbs(self.bb_labels[label])
-            c_objects = self.world.get_environment_objects(self.bb_labels[label])
-            
-            ego_bb = self.vehicle.bounding_box
-            # Filter bounding boxes based on distance from camera
-            bounding_box_set = [bb for bb in bounding_box_set if (bb.location.distance(camera.get_location()) < 50) and (not  bb == ego_bb) and (bb.location.distance(camera.get_location()) >2 )]
-        
-            for bb in bounding_box_set:
+        processed_boxes = {label: [] for label in bounding_box_set.keys()}
+        for label, bb_set in bounding_box_set.items():
+            for bb in bb_set:
+                corners = bb.get_world_vertices(carla.Transform())
+                distance=self.compute_bb_distance(camera.get_transform().location,corners)
+                corners = [self.get_image_point(corner, self.K, world_2_camera) for corner in corners]
+                object_color=self.CLASS_MAPPING[label]
+                object_color=(object_color[2], object_color[1], object_color[0])
                 # Check if the bounding box is visible to the camera
                 #line_of_sight = self.world.get_line_of_sight(camera.get_location(), bb.location)
-                forward_vec = self.vehicle.get_transform().get_forward_vector()
-                bb_direction = bb.location - camera.get_transform().location
-                dot_product = forward_vec.x * bb_direction.x + forward_vec.y * bb_direction.y + forward_vec.z * bb_direction.z
-                if dot_product > 0:
+                #forward_vec = self.vehicle.get_transform().get_forward_vector()
+                #bb_direction = bb.location - camera.get_transform().location
+                #dot_product = forward_vec.x * bb_direction.x + forward_vec.y * bb_direction.y + forward_vec.z * bb_direction.z
+                #if dot_product > 0:
                 #if np.dot(forward_vec, bb_direction) > 0:
                 #relative_location = bb.location - camera.get_location()
                 #ang=camera.get_forward_vector().get_angle(relative_location)
                 #if ang < 80 and ang>=0:
                 # Define percentage to reduce bounding box size by
-                    verts = [v for v in bb.get_world_vertices(carla.Transform())]
-                    center_point = carla.Location()
-                    for v in verts:
-                        center_point += v
-                    center_point /= len(verts)
+                verts = [v for v in bb.get_world_vertices(carla.Transform())]
+                #    center_point = carla.Location()
+                #    for v in verts:
+                #        center_point += v
+                #    center_point /= len(verts)
 
                     # Calculate new vertices by reducing distance from center point by reduction percentage
-                    new_verts = []
-                    for v in verts:
-                        direction = v - center_point
-                        new_direction = direction - direction * reduction_percentage
-                        new_v = center_point + new_direction
-                        new_verts.append(new_v)
+                #    new_verts = []
+                #    for v in verts:
+                #        direction = v - center_point
+                #        new_direction = direction - direction * reduction_percentage
+                #        new_v = center_point + new_direction
+                #        new_verts.append(new_v)
 
                     # Get image coordinates of new vertices
-                    corners = [self.get_image_point(corner, self.K, world_2_camera) for corner in new_verts]
+                #    corners = [self.get_image_point(corner, self.K, world_2_camera) for corner in new_verts]
 
                     # Use NumPy to calculate min/max corners
-                    corners = np.array(corners, dtype=int)
-                    x_min, y_min = np.min(corners, axis=0).astype(int)
+                corners = np.array(corners, dtype=int)
+                x_min, y_min = np.min(corners, axis=0).astype(int)
+                x_max, y_max = np.max(corners, axis=0).astype(int)
+                included=False
+                # Extract the region of interest from the semantic image using the bounding box coordinates
+                # Assume that 'semantic_image' is a CARLA Image object
+                semantic_data = np.frombuffer(semantic_image.raw_data, dtype=np.dtype("uint8"))
+                semantic_data = np.reshape(semantic_data, (semantic_image.height, semantic_image.width, 4))
+                semantic_data = semantic_data[:, :, :3]
+                roi = semantic_data[y_min:y_max, x_min:x_max]
 
-                    # Draw edges of the bounding box into the camera output
-                    for edge in edges:
-                        p1 = self.get_image_point(new_verts[edge[0]], self.K, world_2_camera)
-                        p2 = self.get_image_point(new_verts[edge[1]], self.K, world_2_camera)
-                        # Draw the edges into the camera output
-                        cv2.line(img, (int(p1[0]),int(p1[1])), (int(p2[0]),int(p2[1])), (0,0,255, 255), 1)
+                # Count the number of pixels within the bounding box coordinates that have the correct semantic color
+                count = np.sum((roi == object_color).all(axis=2))
 
-                        #label = 'vehicle'  # replace with the appropriate label for each object type
-                    cv2.putText(img, label, (x_min, y_min -5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                # Compute the total number of pixels within the bounding box coordinates
+                total = roi.shape[0] * roi.shape[1]
 
+                # If the ratio of the number of pixels with the correct semantic color to the total number of pixels is greater than or equal to 0.5, process the bounding box
+                
+                if count*2 >= total :
+                    
+                    for processed_bb in processed_boxes[label]:
+                        if x_min >= processed_bb[0] and x_max <= processed_bb[2] and y_min >= processed_bb[1] and y_max <= processed_bb[3] and processed_bb[4]<distance:
+                            included = True
+                            break
+                    if not included:
+                        # Process the bounding box if it's not included in any previously processed box
+                        processed_boxes[label].append((x_min, y_min, x_max, y_max,distance))
+                        edge_array=[]
+                        # Draw edges of the bounding box into the camera output
+                        for edge in edges:
+                            try: 
+                                p1 = self.get_image_point(verts[edge[0]], self.K, world_2_camera)
+                                p2 = self.get_image_point(verts[edge[1]], self.K, world_2_camera)
+                                # Draw the edges into the camera output
+                                cv2.line(img, (int(p1[0]),int(p1[1])), (int(p2[0]),int(p2[1])), object_color, 1)
+                                edge_array.append((p1.tolist(), p2.tolist()))
+                            except Exception as e:
+                                continue
+                            #label = 'vehicle'  # replace with the appropriate label for each object type
+                        cv2.putText(img, label, (x_min, y_min -5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, object_color, 1)
+                        json_entry = {"label": label, "edges": edge_array}
+                        json_array.append(json_entry)
+        self.record_tick(json_array,rgb,semantic_image,img)
         # Convert the image back to a QImage object and display it
         qimage = QtGui.QImage(img.data, image.width, image.height, QtGui.QImage.Format_RGB32)
         #pixmap = QtGui.QPixmap.fromImage(qimage)
@@ -625,10 +928,9 @@ class MainWindow(QMainWindow):
         # Convert the QImage object to a QPixmap object and display it
         pixmap = QtGui.QPixmap.fromImage(qimage)
         self.label_bounding.setPixmap(pixmap)
-        self.camera_tick += 1
-        self.synchroTick()
+        self.ImageCounter += 1
 
-   
+
     def update_seg_camera_view(self, image):
         image.convert(carla.ColorConverter.CityScapesPalette)
         np_img = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
@@ -669,15 +971,15 @@ class MainWindow(QMainWindow):
         'Walls': (102, 102, 156),
         'traffic_sign': (220, 220, 0),
         'Sky': (70, 130, 180),
-        'ground': (81, 0, 81),
+        'Ground': (81, 0, 81),
         'Bridge': (150, 100, 100),
         'RailTrack': (230, 150, 140),
-        'guardrail': (180, 165, 180),
+        'GuardRail': (180, 165, 180),
         'traffic_light': (250, 170, 30),
         'Static': (110, 190, 160),
         'Dynamic': (170, 120, 50),
-        'water': (45, 60, 150),
-        'terrain': (145, 170, 100)
+        'Water': (45, 60, 150),
+        'Terrain': (145, 170, 100)
     }
     bb_max_dim = {
         'Pedestrians' : (1,2.5),
@@ -686,6 +988,12 @@ class MainWindow(QMainWindow):
         'Rider' : (4,2.5)
 
     }
+    def create_directory(self, scenario_name):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        exec_path= os.path.join(script_dir,'execution')
+        dir_path = os.path.join(exec_path, scenario_name)
+        os.makedirs(dir_path, exist_ok=True)
+        return os.path.abspath(dir_path)
 
     def semsegConversion(self,qimage):
         # Define a dictionary that maps label colors to class names
@@ -713,7 +1021,59 @@ class MainWindow(QMainWindow):
         # Create a color table from the list of color tuples
         qimage.setColorTable(palette_list)
 
+config = configparser.ConfigParser()
+config.read('config.ini')
+carla_path = config.get('Carla', 'path')
+def check_carla_server():
+    try:
+        client = carla.Client('localhost', 2000)
+        client.set_timeout(5.0)
+        client.get_world()
+        return True
+    except Exception as e:
+        print(f"Failed to connect to Carla server: {e}")
+        return False
+
+
+def launch_carla_server():
+    # launch the Carla server
+    os_name = platform.system()
+    print(f"Opening CARLA from path: {os.path.join(carla_path, 'CarlaUE4.exe')}")
+    if os_name == 'Windows':
+        subprocess.Popen([r"C:\CARLA\latest\CarlaUE4.exe"], cwd=carla_path)
+    elif os_name == 'Linux':
+        subprocess.Popen(['CarlaUE4.sh', '-opengl'], cwd=carla_path)
+    else:
+        print('Unsupported operating system')
+
+def close_carla_server():
+    # get the process list
+    processes = psutil.process_iter()
+
+    # find all processes associated with CARLA
+    carla_processes = []
+    for process in processes:
+        if process.name().startswith('Carla'):
+            carla_processes.append(process)
+
+    # terminate all CARLA processes
+    for process in carla_processes:
+        process.terminate()
+
+    # wait for all CARLA processes to terminate
+    psutil.wait_procs(carla_processes)
+
+
+
 if __name__ == '__main__':
+    if not check_carla_server():
+        print('Starting Carla server...')
+        t = threading.Thread(target=launch_carla_server)
+        t.start()
+
+        while not check_carla_server():
+            time.sleep(1)
+
     app = QApplication(sys.argv)
     main_window = MainWindow()
     k=main_window.K
