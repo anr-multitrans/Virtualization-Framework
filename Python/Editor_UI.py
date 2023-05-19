@@ -843,83 +843,87 @@ class MainWindow(QMainWindow):
         processed_boxes = {label: [] for label in bounding_box_set.keys()}
         for label, bb_set in bounding_box_set.items():
             for bb in bb_set:
-                corners = bb.get_world_vertices(carla.Transform())
-                distance=self.compute_bb_distance(camera.get_transform().location,corners)
-                corners = [self.get_image_point(corner, self.K, world_2_camera) for corner in corners]
-                object_color=self.CLASS_MAPPING[label]
-                object_color=(object_color[2], object_color[1], object_color[0])
-                # Check if the bounding box is visible to the camera
-                #line_of_sight = self.world.get_line_of_sight(camera.get_location(), bb.location)
-                #forward_vec = self.vehicle.get_transform().get_forward_vector()
-                #bb_direction = bb.location - camera.get_transform().location
-                #dot_product = forward_vec.x * bb_direction.x + forward_vec.y * bb_direction.y + forward_vec.z * bb_direction.z
-                #if dot_product > 0:
-                #if np.dot(forward_vec, bb_direction) > 0:
-                #relative_location = bb.location - camera.get_location()
-                #ang=camera.get_forward_vector().get_angle(relative_location)
-                #if ang < 80 and ang>=0:
-                # Define percentage to reduce bounding box size by
-                verts = [v for v in bb.get_world_vertices(carla.Transform())]
-                #    center_point = carla.Location()
-                #    for v in verts:
-                #        center_point += v
-                #    center_point /= len(verts)
+                try :
+                    corners = bb.get_world_vertices(carla.Transform())
+                    distance=self.compute_bb_distance(camera.get_transform().location,corners)
+                    corners = [self.get_image_point(corner, self.K, world_2_camera) for corner in corners]
+                    object_color=self.CLASS_MAPPING[label]
+                    object_color=(object_color[2], object_color[1], object_color[0])
+                    # Check if the bounding box is visible to the camera
+                    #line_of_sight = self.world.get_line_of_sight(camera.get_location(), bb.location)
+                    #forward_vec = self.vehicle.get_transform().get_forward_vector()
+                    #bb_direction = bb.location - camera.get_transform().location
+                    #dot_product = forward_vec.x * bb_direction.x + forward_vec.y * bb_direction.y + forward_vec.z * bb_direction.z
+                    #if dot_product > 0:
+                    #if np.dot(forward_vec, bb_direction) > 0:
+                    #relative_location = bb.location - camera.get_location()
+                    #ang=camera.get_forward_vector().get_angle(relative_location)
+                    #if ang < 80 and ang>=0:
+                    # Define percentage to reduce bounding box size by
+                    verts = [v for v in bb.get_world_vertices(carla.Transform())]
+                    #    center_point = carla.Location()
+                    #    for v in verts:
+                    #        center_point += v
+                    #    center_point /= len(verts)
 
-                    # Calculate new vertices by reducing distance from center point by reduction percentage
-                #    new_verts = []
-                #    for v in verts:
-                #        direction = v - center_point
-                #        new_direction = direction - direction * reduction_percentage
-                #        new_v = center_point + new_direction
-                #        new_verts.append(new_v)
+                        # Calculate new vertices by reducing distance from center point by reduction percentage
+                    #    new_verts = []
+                    #    for v in verts:
+                    #        direction = v - center_point
+                    #        new_direction = direction - direction * reduction_percentage
+                    #        new_v = center_point + new_direction
+                    #        new_verts.append(new_v)
 
-                    # Get image coordinates of new vertices
-                #    corners = [self.get_image_point(corner, self.K, world_2_camera) for corner in new_verts]
+                        # Get image coordinates of new vertices
+                    #    corners = [self.get_image_point(corner, self.K, world_2_camera) for corner in new_verts]
 
-                    # Use NumPy to calculate min/max corners
-                corners = np.array(corners, dtype=int)
-                x_min, y_min = np.min(corners, axis=0).astype(int)
-                x_max, y_max = np.max(corners, axis=0).astype(int)
-                included=False
-                # Extract the region of interest from the semantic image using the bounding box coordinates
-                # Assume that 'semantic_image' is a CARLA Image object
-                semantic_data = np.frombuffer(semantic_image.raw_data, dtype=np.dtype("uint8"))
-                semantic_data = np.reshape(semantic_data, (semantic_image.height, semantic_image.width, 4))
-                semantic_data = semantic_data[:, :, :3]
-                roi = semantic_data[y_min:y_max, x_min:x_max]
+                        # Use NumPy to calculate min/max corners
+                    corners = np.array(corners, dtype=int)
+                    x_min, y_min = np.min(corners, axis=0).astype(int)
+                    x_max, y_max = np.max(corners, axis=0).astype(int)
+                    included=False
+                    # Extract the region of interest from the semantic image using the bounding box coordinates
+                    # Assume that 'semantic_image' is a CARLA Image object
+                    semantic_data = np.frombuffer(semantic_image.raw_data, dtype=np.dtype("uint8"))
+                    semantic_data = np.reshape(semantic_data, (semantic_image.height, semantic_image.width, 4))
+                    semantic_data = semantic_data[:, :, :3]
+                    roi = semantic_data[y_min:y_max, x_min:x_max]
 
-                # Count the number of pixels within the bounding box coordinates that have the correct semantic color
-                count = np.sum((roi == object_color).all(axis=2))
+                    # Count the number of pixels within the bounding box coordinates that have the correct semantic color
+                    count = np.sum((roi == object_color).all(axis=2))
 
-                # Compute the total number of pixels within the bounding box coordinates
-                total = roi.shape[0] * roi.shape[1]
+                    # Compute the total number of pixels within the bounding box coordinates
+                    total = roi.shape[0] * roi.shape[1]
 
-                # If the ratio of the number of pixels with the correct semantic color to the total number of pixels is greater than or equal to 0.5, process the bounding box
-                
-                if count*2 >= total :
+                    # If the ratio of the number of pixels with the correct semantic color to the total number of pixels is greater than or equal to 0.5, process the bounding box
                     
-                    for processed_bb in processed_boxes[label]:
-                        if x_min >= processed_bb[0] and x_max <= processed_bb[2] and y_min >= processed_bb[1] and y_max <= processed_bb[3] and processed_bb[4]<distance:
-                            included = True
-                            break
-                    if not included:
-                        # Process the bounding box if it's not included in any previously processed box
-                        processed_boxes[label].append((x_min, y_min, x_max, y_max,distance))
-                        edge_array=[]
-                        # Draw edges of the bounding box into the camera output
-                        for edge in edges:
-                            try: 
-                                p1 = self.get_image_point(verts[edge[0]], self.K, world_2_camera)
-                                p2 = self.get_image_point(verts[edge[1]], self.K, world_2_camera)
-                                # Draw the edges into the camera output
-                                cv2.line(img, (int(p1[0]),int(p1[1])), (int(p2[0]),int(p2[1])), object_color, 1)
-                                edge_array.append((p1.tolist(), p2.tolist()))
-                            except Exception as e:
-                                continue
-                            #label = 'vehicle'  # replace with the appropriate label for each object type
-                        cv2.putText(img, label, (x_min, y_min -5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, object_color, 1)
-                        json_entry = {"label": label, "edges": edge_array}
-                        json_array.append(json_entry)
+                    if count*2 >= total :
+                        
+                        for processed_bb in processed_boxes[label]:
+                            if x_min >= processed_bb[0] and x_max <= processed_bb[2] and y_min >= processed_bb[1] and y_max <= processed_bb[3] and processed_bb[4]<distance:
+                                included = True
+                                break
+                        if not included:
+                            # Process the bounding box if it's not included in any previously processed box
+                            processed_boxes[label].append((x_min, y_min, x_max, y_max,distance))
+                            edge_array=[]
+                            # Draw edges of the bounding box into the camera output
+                            for edge in edges:
+                                try: 
+                                    p1 = self.get_image_point(verts[edge[0]], self.K, world_2_camera)
+                                    p2 = self.get_image_point(verts[edge[1]], self.K, world_2_camera)
+                                    # Draw the edges into the camera output
+                                    cv2.line(img, (int(p1[0]),int(p1[1])), (int(p2[0]),int(p2[1])), object_color, 1)
+                                    edge_array.append((p1.tolist(), p2.tolist()))
+                                except Exception as e:
+                                    continue
+                                #label = 'vehicle'  # replace with the appropriate label for each object type
+                            cv2.putText(img, label, (x_min, y_min -5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, object_color, 1)
+                            json_entry = {"label": label, "edges": edge_array}
+                            json_array.append(json_entry)
+                except Exception as e:
+                    continue
+
         self.record_tick(json_array,rgb,semantic_image,img)
         # Convert the image back to a QImage object and display it
         qimage = QtGui.QImage(img.data, image.width, image.height, QtGui.QImage.Format_RGB32)
