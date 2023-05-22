@@ -180,6 +180,7 @@ class MainWindow(QMainWindow):
          # Set up the main window
         self.scenario_name=''
         self.scenario_folder=''
+        self.folder_button = QPushButton('Change output directory')
         self.generate_Scenario_name()
         
         self.setGeometry(100, 100, 800, 600)
@@ -287,18 +288,27 @@ class MainWindow(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
+        progress_layout = QVBoxLayout()  # Create a vertical layout
 
-        self.textbox = QLineEdit('output path: '+ self.scenario_folder)
+        # Create a label widget
+        self.default_text = "Select a folder to store the output data then click the play button to run scenario"
+        self.progress_label = QLabel(self.default_text)
+        progress_layout.addWidget(self.progress_label) 
+        progress_layout.addWidget(self.progress_bar)
+        self.textbox = QLineEdit(self.scenario_folder)
         self.textbox.setReadOnly(True)
         # create a QPushButton for the folder selection button
-        self.folder_button = QPushButton('Change output directory')
+        output_layout= QVBoxLayout()
+        self.output_label= QLabel('output path:')
+        
         self.folder_button.clicked.connect(self.select_folder)
         
         # create a horizontal layout for the textbox and button
         hbox = QHBoxLayout()
         hbox.addWidget(self.textbox)
         hbox.addWidget(self.folder_button)
-        
+        output_layout.addWidget(self.output_label)
+        output_layout.addLayout(hbox)
         timeline_btn = QPushButton(QIcon("icons/timeline.png"), "")
         new_event_btn = QPushButton(QIcon("icons/new_event.png"), "")
         palette_layout = QHBoxLayout()
@@ -347,18 +357,18 @@ class MainWindow(QMainWindow):
         # Create a layout and add the group box to it
         main_bb_vbox = QVBoxLayout()
         main_bb_vbox.addWidget(group_Radio_box)
-        hbox = QHBoxLayout()
-        hbox.addWidget(self.textbox)
-        hbox.addWidget(self.folder_button)
+        #hbox = QHBoxLayout()
+        #hbox.addWidget(self.textbox)
+        #hbox.addWidget(self.folder_button)
         # Set up the layout for the main window
         central_widget = QWidget()
         layout = QGridLayout()
         layout.addWidget(self.label_rgb, 0, 0)
         layout.addWidget(self.label_seg, 0, 1)
         layout.addWidget(self.label_bounding, 0, 2)
-        layout.addLayout(hbox, 1,0)
+        layout.addLayout(output_layout, 1,0)
         layout.addLayout(main_bb_vbox,1,2)
-        layout.addWidget(self.progress_bar, 1, 1)
+        layout.addLayout(progress_layout, 1, 1)
         layout.addWidget(recording_widget,2,1,1,1)
         layout.addWidget(palette_widget, 3, 0, 1, 3)
         layout.addWidget(group_box)
@@ -444,6 +454,21 @@ class MainWindow(QMainWindow):
 
         self.data = []
 
+    def run_script(stop_event):
+        try:
+            subprocess.run(['python', 'generate_traffic.py'])
+        except KeyboardInterrupt:
+            stop_event.set()
+
+    # Create a stop event
+    stop_event = threading.Event()
+
+    # Create a new thread
+    thread = threading.Thread(target=run_script, args=(stop_event,))
+
+    # Start the thread
+    thread.start()
+
     def record_tick(self, json_array, rgb, semantic_image, img_bb):
         if self.is_running and self.is_recording:
             # Create a dictionary with the data to be stored
@@ -459,22 +484,37 @@ class MainWindow(QMainWindow):
 
     def write_data_to_disk(self):
         # Iterate over the data list and write each item to disk
-        print('writing')
-       # print(length(self.data))
+        print('writing output to disk')
+        self.progress_label.setText("initiating output structure")
+        total = len(self.data)
+        sem_seg_images= os.path.join(self.scenario_folder, "semantic_segmentation")
+        bounding_box_images = os.path.join(self.scenario_folder,"bounding_box_images")
+        json_files = os.path.join(self.scenario_folder,"bounding_box_json")
+        original_images =  os.path.join(self.scenario_folder,"RGB_images")
+        os.makedirs(sem_seg_images, exist_ok=True)
+        os.makedirs(bounding_box_images, exist_ok=True)
+        os.makedirs(json_files, exist_ok=True)
+        os.makedirs(original_images, exist_ok=True)
+        self.progress_label.setText("saving output to disk, please wait")
         for i, data_dict in enumerate(self.data):
-            json_path = os.path.join(self.scenario_folder, 'image_{:06d}_bbs.json'.format(i))
-            image_path = os.path.join(self.scenario_folder, 'image_{:06d}_rgb.png'.format(i))
-            image_seg_path = os.path.join(self.scenario_folder, 'image_{:06d}_seg.png'.format(i))
-            image_bb_path = os.path.join(self.scenario_folder, 'image_{:06d}_bbs.png'.format(i))
+            pro= 100*(i+1)/total
+            json_path = os.path.join(json_files , 'image_{:06d}.json'.format(i))
+            image_path = os.path.join(original_images, 'image_{:06d}.png'.format(i))
+            image_seg_path = os.path.join(sem_seg_images, 'image_{:06d}.png'.format(i))
+            image_bb_path = os.path.join(bounding_box_images, 'image_{:06d}.png'.format(i))
             with open(json_path, "w") as f:
                 json.dump(data_dict["json_array"], f)
             cv2.imwrite(image_path, data_dict["rgb"])
             data_dict["semantic_image"].save_to_disk(image_seg_path)
             cv2.imwrite(image_bb_path, data_dict["img_bb"])
+            self.progress_bar.setValue(pro)
         # Clear the data list
         self.data = []
         print("scenario data is written to :")
         print(self.scenario_folder)
+        self.progress_label.setText(self.default_text)
+        self.show_alert()
+        
     #    self.record_thread = None
 #
     #def record_tick(self, json_array, rgb, semantic_image, img_bb):
@@ -496,9 +536,18 @@ class MainWindow(QMainWindow):
         settings = self.world.get_settings()
         settings.synchronous_mode = False
         self.world.apply_settings(settings)
-        self.client.disconnect()
+        self.destroy_actors()
         close_carla_server()
+
         event.accept()  # Accept the event to actually close the window
+
+    def destroy_actors(self):
+        
+        self.seg_camera.destroy()
+        self.rgb_camera.destroy()
+        self.rgb_camera_ref.destroy()
+        self.vehicle.destroy()
+
     def select_folder(self):
         # open the file dialog and get the selected folder path
         folder_path = QFileDialog.getExistingDirectory(self, 'Select Folder', os.path.expanduser('~'))
@@ -506,12 +555,13 @@ class MainWindow(QMainWindow):
         # update the value of the textbox with the selected folder path
         if folder_path:
             self.scenario_folder= folder_path
-            self.textbox.setText('output path: '+ self.scenario_folder)
+            self.textbox.setText(self.scenario_folder)
     def generate_Scenario_name(self):
         now = datetime.datetime.now()
         self.scenario_name = "Scenario_" + now.strftime("%Y-%m-%d_%H-%M-%S")
         self.scenario_folder= self.create_directory(self.scenario_name)
         self.setWindowTitle("MultiTrans Virtualization Framework | " +  self.scenario_folder)
+        self.folder_button.setEnabled(True)
 
         print("new scenario folder is generated")
         print(self.scenario_folder)
@@ -561,7 +611,7 @@ class MainWindow(QMainWindow):
             self.selected_labels.append(label)
         elif state == 0:
             self.selected_labels.remove(label)
-        print(self.selected_labels)
+        #print(self.selected_labels)
 
     def timerEvent(self, event):
         #print(self.is_running)
@@ -571,6 +621,7 @@ class MainWindow(QMainWindow):
         progress=self.scenario_tick *100 /self.scenario_length
         self.progress_bar.setValue(progress)
         if self.is_running:
+            self.progress_label.setText("running ..")
             self.world.tick()
             w_frame = self.world.get_snapshot().frame
             rgb_image=None
@@ -1029,17 +1080,54 @@ class MainWindow(QMainWindow):
         # Create a color table from the list of color tuples
         qimage.setColorTable(palette_list)
 
+    def show_alert(self):
+        # Create a QMessageBox
+        message_box = QMessageBox()
+
+        # Load the icon from a PNG file
+        icon = QIcon('icons/save_success.png')
+
+        # Set the size of the icon
+        pixmap = icon.pixmap(160, 160)
+        message_box.setIconPixmap(pixmap)
+
+        # Set the message box title
+        message_box.setWindowTitle('Data Saved')
+
+        # Set the message text
+        message_box.setText(f'Scenario data saved successfully to:\n\n{self.scenario_folder}.')
+
+        # Create a button to open the folder
+        open_button = message_box.addButton('Open Folder', QMessageBox.ActionRole)
+        open_button.clicked.connect(self.open_folder)
+
+        # Add the button to the QMessageBox
+        message_box.addButton(open_button, QMessageBox.ActionRole)
+
+        # Adjust the layout of the QMessageBox
+        layout = message_box.layout()
+        layout.setSizeConstraint(QVBoxLayout.SetNoConstraint)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # Set the message box properties
+        message_box.exec_()
+
+    def open_folder(self):
+        # Open the folder using QDesktopServices
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self.scenario_folder))
+
 config = configparser.ConfigParser()
 config.read('config.ini')
 carla_path = config.get('Carla', 'path')
 def check_carla_server():
+    print( "Attempting to connect to Carla server .. ")
     try:
         client = carla.Client('localhost', 2000)
         client.set_timeout(5.0)
         client.get_world()
         return True
     except Exception as e:
-        print(f"Failed to connect to Carla server: {e}")
+        #print(f"Failed to connect to Carla server: {e}")
         return False
 
 
@@ -1085,7 +1173,7 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     main_window = MainWindow()
     k=main_window.K
-    print(k)
+    #print(k)
     camera_location= main_window.rgb_camera.get_transform().location
     w2c=np.array(main_window.rgb_camera.get_transform().get_inverse_matrix())
     p1 = camera_location+ carla.Location(5, 0, 0)
@@ -1098,21 +1186,21 @@ if __name__ == '__main__':
     p8 = camera_location+ carla.Location(-5, -5, -5)
     # Test the function with the in-view point
     point_img = main_window.get_image_point(p1, k, w2c)
-    print(f"point: {p1} -> image coordinates: {point_img}")
+    #print(f"point: {p1} -> image coordinates: {point_img}")
     point_img = main_window.get_image_point(p2, k, w2c)
-    print(f"point: {p2} -> image coordinates: {point_img}")
+    #print(f"point: {p2} -> image coordinates: {point_img}")
     point_img = main_window.get_image_point(p3, k, w2c)
-    print(f"point: {p3} -> image coordinates: {point_img}")
+    #print(f"point: {p3} -> image coordinates: {point_img}")
     point_img = main_window.get_image_point(p4, k, w2c)
-    print(f"point: {p4} -> image coordinates: {point_img}")
+    #print(f"point: {p4} -> image coordinates: {point_img}")
     point_img = main_window.get_image_point(p5, k, w2c)
-    print(f"point: {p5} -> image coordinates: {point_img}")
+    #print(f"point: {p5} -> image coordinates: {point_img}")
     point_img = main_window.get_image_point(p6, k, w2c)
-    print(f"point: {p6} -> image coordinates: {point_img}")
+    #print(f"point: {p6} -> image coordinates: {point_img}")
     point_img = main_window.get_image_point(p7, k, w2c)
-    print(f"point: {p7} -> image coordinates: {point_img}")
+    #print(f"point: {p7} -> image coordinates: {point_img}")
     point_img = main_window.get_image_point(p8, k, w2c)
-    print(f"point: {p8} -> image coordinates: {point_img}")
+    #print(f"point: {p8} -> image coordinates: {point_img}")
 
     
 
@@ -1121,7 +1209,7 @@ if __name__ == '__main__':
 
     # Test the function with the out-of-view point
     point_img = main_window.get_image_point(point_out_of_view, k, w2c)
-    print(f"Out-of-view point: {point_out_of_view} -> image coordinates: {point_img}")
+    #print(f"Out-of-view point: {point_out_of_view} -> image coordinates: {point_img}")
     main_window.show()
     sys.exit(app.exec_())
 
