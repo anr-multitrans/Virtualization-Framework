@@ -473,6 +473,8 @@ class MainWindow(QMainWindow):
             cv2.imwrite(image_bb_path, data_dict["img_bb"])
         # Clear the data list
         self.data = []
+        print("scenario data is written to :")
+        print(self.scenario_folder)
     #    self.record_thread = None
 #
     #def record_tick(self, json_array, rgb, semantic_image, img_bb):
@@ -504,13 +506,15 @@ class MainWindow(QMainWindow):
         # update the value of the textbox with the selected folder path
         if folder_path:
             self.scenario_folder= folder_path
-            self.textbox.setText('output path: '+ self.scenario_folde)
+            self.textbox.setText('output path: '+ self.scenario_folder)
     def generate_Scenario_name(self):
         now = datetime.datetime.now()
         self.scenario_name = "Scenario_" + now.strftime("%Y-%m-%d_%H-%M-%S")
         self.scenario_folder= self.create_directory(self.scenario_name)
         self.setWindowTitle("MultiTrans Virtualization Framework | " +  self.scenario_folder)
-        pass
+
+        print("new scenario folder is generated")
+        print(self.scenario_folder)
     def start_scenario(self):
         
         self.pause_action.setEnabled(True)
