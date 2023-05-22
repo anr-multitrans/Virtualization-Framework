@@ -33,8 +33,10 @@ Additionally, the interface contains several buttons for adding, selecting, modi
 5.  Install required packages using pip:
     
 ``pip install -r requirements.txt`` 
+
+6.  Open the file 'config.ini' in any text editor, under [Carla] entry, change the value of path to the path of CARLA installation directory 
     
-6.  Run the following command to launch the framework:
+7.  Run the following command to launch the framework:
 
 `python Python/Editor_UI.py` 
 
