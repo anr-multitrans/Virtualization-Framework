@@ -2,7 +2,6 @@ import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMenu, QVBoxLayout, QSizePolicy, QMessageBox, QWidget, QPushButton, QFileDialog, QLabel, QHBoxLayout, QComboBox, QGridLayout, QCheckBox, QGroupBox, QLineEdit, QProgressBar,QRadioButton,QMessageBox
 from PyQt5.QtCore import QUrl
 from PyQt5.QtGui import QDesktopServices, QIcon
-
 from PyQt5.QtGui import QIcon, QImage, QPixmap
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5 import QtGui
@@ -27,358 +26,74 @@ import threading
 import configparser
 import psutil
 import copy
+from tools import (
+    copyImageData,
+    max_projected_length,
+    is_visible,
+    expand_bb,
+    sensor_callback,
+    synchro_queue,
+    ImageObj,
+    selected_labels,
+    bb_labels,
+    config, 
+    carla_path,
+    check_carla_server,
+    launch_carla_server,
+    close_carla_server
+)
 
 
-class RecordThread(QThread):
-    finished = pyqtSignal()
-    error = pyqtSignal(str)
 
-    def __init__(self, json_array, rgb, semantic_image, img_bb, scenario_folder, image_counter):
-        super().__init__()
-        self.json_array = json_array
-        self.rgb = rgb
-        self.semantic_image = semantic_image
-        self.img_bb = img_bb
-        self.scenario_folder = scenario_folder
-        self.image_counter = image_counter
 
-    def run(self):
-        try:
-
-            json_string = json.dumps(self.json_array)
-            image_path=os.path.join(self.scenario_folder, 'image_{:06d}_rgb.png'.format(self.image_counter))
-            cv2.imwrite(image_path, self.rgb)
-
-            image_seg_path=os.path.join(self.scenario_folder, 'image_{:06d}_seg.png'.format(self.image_counter))
-            self.semantic_image.save_to_disk(image_seg_path) 
-            image_bb_path=os.path.join(self.scenario_folder, 'image_{:06d}_bbs.png'.format(self.image_counter))
-            cv2.imwrite(image_bb_path, self.img_bb)
-            json_path=os.path.join(self.scenario_folder, 'image_{:06d}_bbs.json'.format(self.image_counter))
-            try:
-                with open(json_path, "w") as f:
-                    json.dump(json.loads(json_string), f)
-            except Exception as e1:
-                pass
-        except Exception as e:
-            self.error.emit(str(e))
-        finally:
-            self.finished.emit()
-def copyImageData(source_image):
-    source_array = np.array(source_image.raw_data)
-    #source_array = source_array.reshape((source_image.height, source_image.width, 4))
-
-    # Create a new RGB image
-    new_image = np.zeros(source_array.shape,dtype=np.uint8)#np.zeros((source_image.height, source_image.width, 3), dtype=np.uint8)
-
-    # Copy the pixel values from source_array to new_image
-    new_image[:] = source_array[:]
-    #new_image[:] = source_array[:, :, :3]
-    return new_image
-# Sensor callback.
-# This is where you receive the sensor data and
-# process it as you liked and the important part is that,
-# at the end, it should include an element into the sensor queue.
-synchro_queue = Queue()
-
-ImageObj = namedtuple('ImageObj', ['raw_data', 'width', 'height', 'fov'])
-selected_labels=['Bicycle','Bus','Car','Motorcycle','Rider','Static','traffic_light','traffic_sign','Truck']
-bb_labels= {
-    #'Any' : carla.CityObjectLabel.Any,
-    'Bicycle' : carla.CityObjectLabel.Bicycle,
-    #'Bridge' : carla.CityObjectLabel.Bridge,
-    'Buildings' : carla.CityObjectLabel.Buildings,
-    'Bus' : carla.CityObjectLabel.Bus,
-    'Car' : carla.CityObjectLabel.Car,
-    'Dynamic' : carla.CityObjectLabel.Dynamic,
-    'Fences' : carla.CityObjectLabel.Fences,
-    'Ground' : carla.CityObjectLabel.Ground,
-    'GuardRail' : carla.CityObjectLabel.GuardRail,
-    'Motorcycle' : carla.CityObjectLabel.Motorcycle,
-    #'NONE' : carla.CityObjectLabel.NONE,
-    'Other' : carla.CityObjectLabel.Other,
-    'Pedestrians' : carla.CityObjectLabel.Pedestrians,
-    #'Poles' : carla.CityObjectLabel.Poles,
-    'RailTrack' : carla.CityObjectLabel.RailTrack,
-    'Rider' : carla.CityObjectLabel.Rider,
-    'RoadLines' : carla.CityObjectLabel.RoadLines,
-    'Roads' : carla.CityObjectLabel.Roads,
-    'Sidewalks' : carla.CityObjectLabel.Sidewalks,
-    'Sky' : carla.CityObjectLabel.Sky,
-    'Static' : carla.CityObjectLabel.Static,
-    'Terrain' : carla.CityObjectLabel.Terrain,
-    'traffic_light' : carla.CityObjectLabel.TrafficLight,
-    'traffic_sign' : carla.CityObjectLabel.TrafficSigns,
-    #'Train' : carla.CityObjectLabel.Train,
-    'Truck' : carla.CityObjectLabel.Truck,
-    'Vegetation' : carla.CityObjectLabel.Vegetation,
-    'Walls' : carla.CityObjectLabel.Walls,
-    'Water' : carla.CityObjectLabel.Water
-
-    }
-def max_projected_length(length, distance,K):
-        f=K[0,0]
-        l_max = (f * length) / distance
-        return l_max
-def is_visible(bb, camera_transform,k):
-    forward_vec = camera_transform.get_forward_vector()
-    bb_direction = bb.location - camera_transform.location
-    dist=bb.location.distance(camera_transform.location)
-    bb_width=bb.extent.z 
-    if max_projected_length(bb_width, dist,k)<5 :
-       # print(bb)
-       # print("too small")
-        return False
-    dot_product = (forward_vec.x) * (bb_direction.x) + forward_vec.y * (bb_direction.y) + forward_vec.z * (bb_direction.z)
-    #if dot_product<=0:
-       # print(bb)
-       # print("behind camera")
-    return dot_product>0
-
-def expand_bb(bounding_boxes):
-    for label in ["Bicycle" , "Motorcycle"]:
-        if label in bounding_boxes:
-            for bb in bounding_boxes[label]:
-                # Expand the bounding box and append it to the modified_bbs list
-                # Add a new entry for "Rider" if it doesn't exist
-                if "Rider" not in bounding_boxes:
-                    bounding_boxes["Rider"] = []
-                # Add a new bounding box for "Rider" with the same location and dimensions
-                rider_bb = carla.BoundingBox(carla.Location(bb.location), carla.Vector3D(bb.extent))
-                bounding_boxes["Rider"].append(rider_bb)
-
-def sensor_callback(world, actor, sensor_data, synchro_queue, sensor_name,K=None):
-    if(sensor_name=='rgb_camera'):
-        transform=actor.get_transform()
-        # Calculate distances to camera for each bounding box
-        bounding_boxes_with_distances = {
-            label: [(bb, bb.location.distance(transform.location)) for bb in world.get_level_bbs(bb_labels[label]) if is_visible(bb, transform,K)]
-            for label in selected_labels
-        }
-        # Sort bounding boxes by distance from camera in place
-        sorted_bounding_boxes = {
-            label: [bb for bb, _ in sorted(bounding_boxes_with_distances[label], key=lambda x: x[1])]
-            for label in selected_labels
-        }
-        bounding_boxes_3d = sorted_bounding_boxes
-        expand_bb(bounding_boxes_3d)
-        camera_transform= carla.Transform(transform.location, transform.rotation)
-        synchro_queue.put((sensor_data.frame, "bounding_boxes",bounding_boxes_3d))
-        synchro_queue.put((sensor_data.frame, "camera_transform",camera_transform))
-
-    synchro_queue.put((sensor_data.frame, sensor_name,sensor_data))
 
 
 # Main Window
 
 class MainWindow(QMainWindow):
+
     def __init__(self):
+        
+        super().__init__()
+
         self.scenario_length=1000
         self.scenario_tick = 0
         self.progress_updated = pyqtSignal(int)
-        super().__init__()
-        self.x=0
-         # Set up the main window
-        self.scenario_name=''
-        self.scenario_folder=''
-        self.folder_button = QPushButton('Change output directory')
-        self.generate_Scenario_name()
-        
-        self.setGeometry(100, 100, 800, 600)
-        bb_drawn = True
-        self.global_imabe_error=0
-        #while not bb_drawn:
-        # Initialize the CARLA client and world
-        self.client = carla.Client('localhost', 2000)
-        self.client.set_timeout(30.0)
-        self.client.load_world('Town05')
-        self.world = self.client.get_world()
-        #☺self.context= self.world.get_snapshot()
+        self.x = 0
+        self.scenario_name = ''
+        self.scenario_folder = ''
+        self.bb_drawn = True
+        self.global_imabe_error = 0
         self.camera_tick = 0
         self.ThreeD = True
         self.ImageCounter=0
-        #self.semantic_image= None
-        # We create all the sensors and keep them in a list for convenience.
         self.synchro_list = []
-        # Adjust the graphics settings
-        settings = self.world.get_settings()
-        settings.fixed_delta_seconds = 0.05
-        settings.synchronous_mode = True
-        settings.no_rendering_mode = False
-        settings.quality_level = 'Ultra'
-        settings.resolution = (1920, 1080)
-        settings.anti_aliasing = '16x'
-        settings.shadow_quality = 'Epic'
-        settings.particles_quality_level = 'High'
-        self.world.apply_settings(settings)
-        # initiate bounding_box_labels
         self.selected_labels=selected_labels
         self.bb_labels= bb_labels
         self.is_running= False
         self.is_recording = True
         self.is_step_by_step=False
+        
+        self.init_ui()
+        # Initialize the CARLA client and world
+        self.init_carla_client()
+        
+        # Adjust the graphics and world settings
+        self.adjust_carla_settings()
+        
+        # Initiate bounding_box_labels
+        #self.init_bounding_box_labels()
 
-        group_box = QGroupBox('City Object Labels')
-        # Create the checkboxes and add them to the group box
-        checkbox_layout =  QGridLayout()
-        for i, (label, value) in enumerate(bb_labels.items()):
-            checkbox = QCheckBox(label)
-            checkbox.setChecked(label in selected_labels)
-            #self.selected_labels.append(label)
-            checkbox.stateChanged.connect(lambda state, label=label: self.checkbox_state_changed(state, label))
-            row = i // 4  # display 4 checkboxes per row
-            col = i % 4
-            checkbox_layout.addWidget(checkbox, row, col)
-        group_box.setLayout(checkbox_layout)
         # Set the weather parameters
-        weather = carla.WeatherParameters(
-            cloudiness=random.uniform(0.0, 50.0),
-            precipitation=random.uniform(-50, 0),
-            precipitation_deposits=random.uniform(0.0, 50.0),
-            wind_intensity=random.uniform(0.0, 50.0),
-            sun_azimuth_angle=random.uniform(45.0, 135.0),
-            sun_altitude_angle=random.uniform(45.0, 145.0),
-            fog_density=random.uniform(0.0, 25.0),
-            fog_distance=random.uniform(0.0, 200.0),
-            fog_falloff=random.uniform(0.0, 200.0),
-            wetness=random.uniform(0.0, 50.0),
-            #puddles=random.uniform(0.0, 50.0),
-            scattering_intensity=random.uniform(0.0, 50.0), 
-            mie_scattering_scale=random.uniform(0.0, 50.0), 
-            rayleigh_scattering_scale=0.03310000151395798, 
-            dust_storm=random.uniform(0.0, 25.0),
-            #snow_depth=random.uniform(0.0, 50.0),
-            #ice_adherence=random.uniform(0.0, 50.0),
-            #precipitation_type=carla.WeatherParameters.PrecipitationType.Snow
-            #is_wet=True
-
-        )
-
-        self.label_rgb = QLabel(self)
-        self.label_seg = QLabel(self)
-        self.label_bounding = QLabel(self)
-        
-        # Set up the palette of editing a scenario
-        self.rec_btn = QPushButton(QIcon("icons/ON.png"), "")
-        self.rec_btn.setFixedSize(225, 100)  # set button size to 50x50 pixels
-        self.rec_btn.setIconSize(self.rec_btn.size())
-        self.rec_btn.setStyleSheet("QPushButton { border: none; }")
-        self.recording_label = QLabel('Scenario recording is : ')
-        recoring_layout = QHBoxLayout()
-        recoring_layout.addStretch(1)
-        recoring_layout.addWidget(self.recording_label)
-        recoring_layout.addWidget(self.rec_btn)
-        recording_widget = QWidget()
-        self.rec_btn.clicked.connect(self.record_scenario)
-        self.play_btn = QPushButton(QIcon("icons/play.png"), "")
-        self.play_btn.setFixedSize(100, 100)  # set button size to 50x50 pixels
-        self.play_btn.setIconSize(self.play_btn.size())
-        self.play_btn.setStyleSheet("QPushButton { border: none; }")
-        self.play_btn.clicked.connect(self.start_scenario)
-        self.pause_btn = QPushButton(QIcon("icons/pause.png"), "")
-        self.pause_btn.setFixedSize(100, 100)  # set button size to 50x50 pixels
-        self.pause_btn.setIconSize(self.pause_btn.size())
-        self.pause_btn.setStyleSheet("QPushButton { border: none; }")
-        self.pause_btn.clicked.connect(self.pause_scenario)
-        self.stop_btn = QPushButton(QIcon("icons/stop.png"), "")
-        self.stop_btn.setFixedSize(100, 100)  # set button size to 50x50 pixels
-        self.stop_btn.setIconSize(self.stop_btn.size())
-        self.stop_btn.setStyleSheet("QPushButton { border: none; }")
-        self.stop_btn.clicked.connect(self.stop_scenario)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMinimum(0)
-        self.progress_bar.setMaximum(100)
-        progress_layout = QVBoxLayout()  # Create a vertical layout
-
-        # Create a label widget
-        self.default_text = "Select a folder to store the output data then click the play button to run scenario"
-        self.progress_label = QLabel(self.default_text)
-        progress_layout.addWidget(self.progress_label) 
-        progress_layout.addWidget(self.progress_bar)
-        self.textbox = QLineEdit(self.scenario_folder)
-        self.textbox.setReadOnly(True)
-        # create a QPushButton for the folder selection button
-        output_layout= QVBoxLayout()
-        self.output_label= QLabel('output path:')
-        
-        self.folder_button.clicked.connect(self.select_folder)
-        
-        # create a horizontal layout for the textbox and button
-        hbox = QHBoxLayout()
-        hbox.addWidget(self.textbox)
-        hbox.addWidget(self.folder_button)
-        output_layout.addWidget(self.output_label)
-        output_layout.addLayout(hbox)
-        timeline_btn = QPushButton(QIcon("icons/timeline.png"), "")
-        new_event_btn = QPushButton(QIcon("icons/new_event.png"), "")
-        palette_layout = QHBoxLayout()
-        recording_widget.setLayout(recoring_layout)
-        #addWidget(self.rec_btn)
-        palette_layout.addWidget(self.play_btn)
-        palette_layout.addWidget(self.pause_btn)
-        palette_layout.addWidget(self.stop_btn)
-        #palette_layout.addWidget(timeline_btn)
-        #palette_layout.addWidget(new_event_btn)
-        palette_widget = QWidget()
-        palette_widget.setLayout(palette_layout)
-
-        # Set up the menu bar
-        menu_bar = self.menuBar()
-        scenario_menu = menu_bar.addMenu("Scenario")
-        self.start_action = scenario_menu.addAction("Start")
-        self.stop_action = scenario_menu.addAction("Stop")
-        self.pause_action = scenario_menu.addAction("Pause")
-        self.record_action = scenario_menu.addAction("Stop recording")
-        self.start_action.setEnabled(True)
-        self.pause_action.setEnabled(False)
-        self.stop_action.setEnabled(False)
-        self.start_action.setEnabled(True)
-        # Connect the menu bar actions to functions
-        self.start_action.triggered.connect(self.start_scenario)
-        self.stop_action.triggered.connect(self.stop_scenario)
-        self.pause_action.triggered.connect(self.pause_scenario)
-        self.record_action.triggered.connect(self.record_scenario)
-
-        self.radio2D = QRadioButton('2D')
-        self.radio3D = QRadioButton('3D')
-        #self.radio3 = QRadioButton('Radio 3')
-
-        # Set radio1 as the default selected button
-        self.radio3D.setChecked(True)
-
-        # Create a group box and add the radio buttons to it
-        group_Radio_box = QGroupBox("Bounding boxes mode")
-        vbox = QVBoxLayout()
-        vbox.addWidget(self.radio2D)
-        vbox.addWidget(self.radio3D)
-        
-        group_Radio_box.setLayout(vbox)
-
-        # Create a layout and add the group box to it
-        main_bb_vbox = QVBoxLayout()
-        main_bb_vbox.addWidget(group_Radio_box)
-        #hbox = QHBoxLayout()
-        #hbox.addWidget(self.textbox)
-        #hbox.addWidget(self.folder_button)
-        # Set up the layout for the main window
-        central_widget = QWidget()
-        layout = QGridLayout()
-        layout.addWidget(self.label_rgb, 0, 0)
-        layout.addWidget(self.label_seg, 0, 1)
-        layout.addWidget(self.label_bounding, 0, 2)
-        layout.addLayout(output_layout, 1,0)
-        layout.addLayout(main_bb_vbox,1,2)
-        layout.addLayout(progress_layout, 1, 1)
-        layout.addWidget(recording_widget,2,1,1,1)
-        layout.addWidget(palette_widget, 3, 0, 1, 3)
-        layout.addWidget(group_box)
-        central_widget.setLayout(layout)
-        self.setCentralWidget(central_widget)
-
-
-
+        self.set_weather_parameters()
         self.K = self.build_projection_matrix(1280, 1024, 90)
+        self.init_carla_scenario()
+        #self.carla_setup()
+        # Call other functions to initialize other variables if needed
+ 
+        
 
+    def spawn_vehicle_and_cameras(self):
         vehicle_bp = random.choice(self.world.get_blueprint_library().filter('vehicle*'))
         #carla.Transform(carla.Location(x=35,y=35,z=0))
 
@@ -454,6 +169,231 @@ class MainWindow(QMainWindow):
 
         self.data = []
 
+    def init_ui(self):
+        
+        
+        self.folder_button = QPushButton('Change output directory')
+        self.generate_Scenario_name()
+        
+        # Set up the main window
+        self.setGeometry(100, 100, 800, 600)
+        
+
+
+        group_box = QGroupBox('City Object Labels')
+        # Create the checkboxes and add them to the group box
+        checkbox_layout =  QGridLayout()
+        for i, (label, value) in enumerate(bb_labels.items()):
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(label in selected_labels)
+            #self.selected_labels.append(label)
+            checkbox.stateChanged.connect(lambda state, label=label: self.checkbox_state_changed(state, label))
+            row = i // 4  # display 4 checkboxes per row
+            col = i % 4
+            checkbox_layout.addWidget(checkbox, row, col)
+        group_box.setLayout(checkbox_layout)
+
+        
+
+       
+
+
+        # Set up the palette of editing a scenario
+        output_layout, progress_layout, recording_widget, palette_widget = self.setup_palette()
+
+        # Set up the menu bar
+        menu_bar = self.setup_menu_bar()
+
+        # Set up the radio buttons for bounding box mode
+        main_bb_vbox = self.setup_radio_buttons()
+
+        # Set up the layout for the main window
+        self.setup_layout(output_layout, main_bb_vbox, progress_layout, recording_widget, palette_widget,group_box)
+
+    def setup_layout(self,output_layout, main_bb_vbox, progress_layout, recording_widget, palette_widget,group_box):
+        central_widget = QWidget()
+        layout = QGridLayout()
+        self.label_rgb = QLabel(self)
+        self.label_seg = QLabel(self)
+        self.label_bounding = QLabel(self)
+        layout.addWidget(self.label_rgb, 0, 0)
+        layout.addWidget(self.label_seg, 0, 1)
+        layout.addWidget(self.label_bounding, 0, 2)
+        layout.addLayout(output_layout, 1,0)
+        layout.addLayout(main_bb_vbox,1,2)
+        layout.addLayout(progress_layout, 1, 1)
+        layout.addWidget(recording_widget,2,1,1,1)
+        layout.addWidget(palette_widget, 3, 0, 1, 3)
+        layout.addWidget(group_box)
+        central_widget.setLayout(layout)
+        self.setCentralWidget(central_widget)
+
+    def setup_radio_buttons(self):
+        self.radio2D = QRadioButton('2D')
+        self.radio3D = QRadioButton('3D')
+        #self.radio3 = QRadioButton('Radio 3')
+
+        # Set radio1 as the default selected button
+        self.radio3D.setChecked(True)
+
+        # Create a group box and add the radio buttons to it
+        group_Radio_box = QGroupBox("Bounding boxes mode")
+        vbox = QVBoxLayout()
+        vbox.addWidget(self.radio2D)
+        vbox.addWidget(self.radio3D)
+        
+        group_Radio_box.setLayout(vbox)
+        # Create a layout and add the group box to it
+        main_bb_vbox = QVBoxLayout()
+        main_bb_vbox.addWidget(group_Radio_box)
+
+        return main_bb_vbox
+
+    def setup_menu_bar(self):
+        menu_bar = self.menuBar()
+        scenario_menu = menu_bar.addMenu("Scenario")
+        self.start_action = scenario_menu.addAction("Start")
+        self.stop_action = scenario_menu.addAction("Stop")
+        self.pause_action = scenario_menu.addAction("Pause")
+        self.record_action = scenario_menu.addAction("Stop recording")
+        self.start_action.setEnabled(True)
+        self.pause_action.setEnabled(False)
+        self.stop_action.setEnabled(False)
+        self.start_action.setEnabled(True)
+        # Connect the menu bar actions to functions
+        self.start_action.triggered.connect(self.start_scenario)
+        self.stop_action.triggered.connect(self.stop_scenario)
+        self.pause_action.triggered.connect(self.pause_scenario)
+        self.record_action.triggered.connect(self.record_scenario)
+        return menu_bar
+
+    def setup_palette(self):
+        recoring_layout = QHBoxLayout()
+        recording_widget = QWidget()
+        progress_layout = QVBoxLayout()  # Create a vertical layout
+        # create a horizontal layout for the textbox and button
+        hbox = QHBoxLayout()
+        self.rec_btn = QPushButton(QIcon("icons/ON.png"), "")
+        self.rec_btn.setFixedSize(225, 100)  # set button size to 50x50 pixels
+        self.rec_btn.setIconSize(self.rec_btn.size())
+        self.rec_btn.setStyleSheet("QPushButton { border: none; }")
+        self.recording_label = QLabel('Scenario recording is : ')
+        
+        recoring_layout.addStretch(1)
+        recoring_layout.addWidget(self.recording_label)
+        recoring_layout.addWidget(self.rec_btn)
+        
+        self.rec_btn.clicked.connect(self.record_scenario)
+        self.play_btn = QPushButton(QIcon("icons/play.png"), "")
+        self.play_btn.setFixedSize(100, 100)  # set button size to 50x50 pixels
+        self.play_btn.setIconSize(self.play_btn.size())
+        self.play_btn.setStyleSheet("QPushButton { border: none; }")
+        self.play_btn.clicked.connect(self.start_scenario)
+        self.pause_btn = QPushButton(QIcon("icons/pause.png"), "")
+        self.pause_btn.setFixedSize(100, 100)  # set button size to 50x50 pixels
+        self.pause_btn.setIconSize(self.pause_btn.size())
+        self.pause_btn.setStyleSheet("QPushButton { border: none; }")
+        self.pause_btn.clicked.connect(self.pause_scenario)
+        self.stop_btn = QPushButton(QIcon("icons/stop.png"), "")
+        self.stop_btn.setFixedSize(100, 100)  # set button size to 50x50 pixels
+        self.stop_btn.setIconSize(self.stop_btn.size())
+        self.stop_btn.setStyleSheet("QPushButton { border: none; }")
+        self.stop_btn.clicked.connect(self.stop_scenario)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        
+
+        # Create a label widget
+        self.default_text = "Select a folder to store the output data then click the play button to run scenario"
+        self.progress_label = QLabel(self.default_text)
+        progress_layout.addWidget(self.progress_label) 
+        progress_layout.addWidget(self.progress_bar)
+        self.textbox = QLineEdit(self.scenario_folder)
+        self.textbox.setReadOnly(True)
+        # create a QPushButton for the folder selection button
+        output_layout= QVBoxLayout()
+        self.output_label= QLabel('output path:')
+        
+        self.folder_button.clicked.connect(self.select_folder)
+        
+        
+        hbox.addWidget(self.textbox)
+        hbox.addWidget(self.folder_button)
+        output_layout.addWidget(self.output_label)
+        output_layout.addLayout(hbox)
+        timeline_btn = QPushButton(QIcon("icons/timeline.png"), "")
+        new_event_btn = QPushButton(QIcon("icons/new_event.png"), "")
+        palette_layout = QHBoxLayout()
+        recording_widget.setLayout(recoring_layout)
+        #addWidget(self.rec_btn)
+        palette_layout.addWidget(self.play_btn)
+        palette_layout.addWidget(self.pause_btn)
+        palette_layout.addWidget(self.stop_btn)
+        #palette_layout.addWidget(timeline_btn)
+        #palette_layout.addWidget(new_event_btn)
+        palette_widget = QWidget()
+        palette_widget.setLayout(palette_layout)
+        return output_layout, progress_layout, recording_widget, palette_widget
+
+    def init_carla_client(self):
+        self.client = carla.Client('localhost', 2000)
+        self.client.set_timeout(30.0)
+        self.client.load_world('Town05')
+        self.world = self.client.get_world()
+        
+    def adjust_carla_settings(self):
+        settings = self.world.get_settings()
+        settings.fixed_delta_seconds = 0.05
+        settings.synchronous_mode = True
+        settings.no_rendering_mode = False
+        settings.quality_level = 'Ultra'
+        settings.resolution = (1920, 1080)
+        settings.anti_aliasing = '16x'
+        settings.shadow_quality = 'Epic'
+        settings.particles_quality_level = 'High'
+        self.world.apply_settings(settings)
+
+    def set_weather_parameters(self):
+        weather = carla.WeatherParameters(
+            cloudiness=random.uniform(0.0, 50.0),
+            precipitation=random.uniform(-50, 0),
+            precipitation_deposits=random.uniform(0.0, 50.0),
+            wind_intensity=random.uniform(0.0, 50.0),
+            sun_azimuth_angle=random.uniform(45.0, 135.0),
+            sun_altitude_angle=random.uniform(45.0, 145.0),
+            fog_density=random.uniform(0.0, 25.0),
+            fog_distance=random.uniform(0.0, 200.0),
+            fog_falloff=random.uniform(0.0, 200.0),
+            wetness=random.uniform(0.0, 50.0),
+            #puddles=random.uniform(0.0, 50.0),
+            scattering_intensity=random.uniform(0.0, 50.0), 
+            mie_scattering_scale=random.uniform(0.0, 50.0), 
+            rayleigh_scattering_scale=0.03310000151395798, 
+            dust_storm=random.uniform(0.0, 25.0),
+            #snow_depth=random.uniform(0.0, 50.0),
+            #ice_adherence=random.uniform(0.0, 50.0),
+            #precipitation_type=carla.WeatherParameters.PrecipitationType.Snow
+            #is_wet=True
+
+        )
+    def init_carla_scenario(self):
+        # Initialize CARLA scenario-related variables
+        self.is_running = False
+        self.is_recording = True
+        self.is_step_by_step = False
+
+        # Spawn the vehicle and cameras
+        self.spawn_vehicle_and_cameras()
+
+        # Start the timer for updating the real-time views
+        #self.start_timer()
+
+        # Initialize other variables related to the CARLA scenario
+        #self.new_vehicle = None
+        #self.data = []
+
     def run_script(stop_event):
         try:
             subprocess.run(['python', 'generate_traffic.py'])
@@ -502,12 +442,30 @@ class MainWindow(QMainWindow):
             image_path = os.path.join(original_images, 'image_{:06d}.png'.format(i))
             image_seg_path = os.path.join(sem_seg_images, 'image_{:06d}.png'.format(i))
             image_bb_path = os.path.join(bounding_box_images, 'image_{:06d}.png'.format(i))
-            with open(json_path, "w") as f:
-                json.dump(data_dict["json_array"], f)
-            cv2.imwrite(image_path, data_dict["rgb"])
-            data_dict["semantic_image"].save_to_disk(image_seg_path)
-            cv2.imwrite(image_bb_path, data_dict["img_bb"])
-            self.progress_bar.setValue(pro)
+
+            if None not in data_dict["rgb"] and None not in data_dict["img_bb"] and data_dict["semantic_image"]!=None :
+                try:
+                    with open(json_path, "w") as f:
+                        json.dump(data_dict["json_array"], f)
+
+                    cv2.imwrite(image_path, data_dict["rgb"])
+                    data_dict["semantic_image"].save_to_disk(image_seg_path)
+                    cv2.imwrite(image_bb_path, data_dict["img_bb"])
+
+                    self.progress_bar.setValue(pro)
+
+                except Exception as e:
+                    # Handle the exception here (e.g., log the error, display an error message)
+                    print("An error occurred:", str(e))
+                    # Optionally, undo any changes made before the exception occurred
+            else:
+                print("One or more objects are NoneType. The code was not executed.")
+            #with open(json_path, "w") as f:
+            ##    json.dump(data_dict["json_array"], f)
+            ##cv2.imwrite(image_path, data_dict["rgb"])
+           ## data_dict["semantic_image"].save_to_disk(image_seg_path)
+           # #cv2.imwrite(image_bb_path, data_dict["img_bb"])
+            #self.progress_bar.setValue(pro)
         # Clear the data list
         self.data = []
         print("scenario data is written to :")
@@ -673,8 +631,8 @@ class MainWindow(QMainWindow):
                 
                 self.scenario_tick+=1
 
-            except Empty:
-                    pass
+            except Exception as e:
+                    print(e)
             self.vehicle.set_autopilot(True)
 
     def start_stop_camera(self):
@@ -814,6 +772,7 @@ class MainWindow(QMainWindow):
         rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         #print("reshape")
         #ego_bb = self.vehicle.bounding_box
+        bb_id=0
         processed_boxes = {label: [] for label in bounding_box_set.keys()}
         for label, bb_set in bounding_box_set.items():
             for bb in bb_set:
@@ -872,8 +831,9 @@ class MainWindow(QMainWindow):
 
                         #label = 'vehicle'  # replace with the appropriate label for each object type
                         cv2.putText(img, label, (x_min_new, y_min_new-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, object_color, 1)
-                        json_entry = {"label": label, "x_min": int(x_min_new), "y_min": int(y_min_new), "x_max": int(x_min_new), "y_max":int(y_max_new)}
+                        json_entry = {"id": bb_id, "label": label, "x_min": int(x_min_new), "y_min": int(y_min_new), "x_max": int(x_min_new), "y_max":int(y_max_new)}
                         json_array.append(json_entry)
+                        bb_id += 1
 
         self.record_tick(json_array,rgb,semantic_image,img)
         # Convert the image back to a QImage object and display it
@@ -895,6 +855,7 @@ class MainWindow(QMainWindow):
         #rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         img = np.reshape(img, (image.height, image.width, 4))
         #carla.CityObjectLabel.Car
+        bb_id=0
         processed_boxes = {label: [] for label in bounding_box_set.keys()}
         for label, bb_set in bounding_box_set.items():
             for bb in bb_set:
@@ -971,11 +932,13 @@ class MainWindow(QMainWindow):
                                     cv2.line(img, (int(p1[0]),int(p1[1])), (int(p2[0]),int(p2[1])), object_color, 1)
                                     edge_array.append((p1.tolist(), p2.tolist()))
                                 except Exception as e:
+                                    print(e)
                                     continue
                                 #label = 'vehicle'  # replace with the appropriate label for each object type
                             cv2.putText(img, label, (x_min, y_min -5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, object_color, 1)
-                            json_entry = {"label": label, "edges": edge_array}
+                            json_entry = {"id": bb_id, "label": label, "edges": edge_array}
                             json_array.append(json_entry)
+                            bb_id += 1
                 except Exception as e:
                     continue
 
@@ -1116,48 +1079,7 @@ class MainWindow(QMainWindow):
         # Open the folder using QDesktopServices
         QDesktopServices.openUrl(QUrl.fromLocalFile(self.scenario_folder))
 
-config = configparser.ConfigParser()
-config.read('config.ini')
-carla_path = config.get('Carla', 'path')
-def check_carla_server():
-    print( "Attempting to connect to Carla server .. ")
-    try:
-        client = carla.Client('localhost', 2000)
-        client.set_timeout(5.0)
-        client.get_world()
-        return True
-    except Exception as e:
-        #print(f"Failed to connect to Carla server: {e}")
-        return False
 
-
-def launch_carla_server():
-    # launch the Carla server
-    os_name = platform.system()
-    print(f"Opening CARLA from path: {os.path.join(carla_path, 'CarlaUE4.exe')}")
-    if os_name == 'Windows':
-        subprocess.Popen([r"C:\CARLA\latest\CarlaUE4.exe"], cwd=carla_path)
-    elif os_name == 'Linux':
-        subprocess.Popen(['CarlaUE4.sh', '-opengl'], cwd=carla_path)
-    else:
-        print('Unsupported operating system')
-
-def close_carla_server():
-    # get the process list
-    processes = psutil.process_iter()
-
-    # find all processes associated with CARLA
-    carla_processes = []
-    for process in processes:
-        if process.name().startswith('Carla'):
-            carla_processes.append(process)
-
-    # terminate all CARLA processes
-    for process in carla_processes:
-        process.terminate()
-
-    # wait for all CARLA processes to terminate
-    psutil.wait_procs(carla_processes)
 
 
 
