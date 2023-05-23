@@ -34,11 +34,15 @@ Additionally, the interface contains several buttons for adding, selecting, modi
     
 ``pip install -r requirements.txt`` 
 
-6.  Open the file 'config.ini' in any text editor, under [Carla] entry, change the value of path to the path of CARLA installation directory 
-    
-7.  Run the following command to launch the framework:
+6.  Navigate using the terminal to the sub-directory "Python":
 
-`python Python/Editor_UI.py` 
+`` cd Python ``
+
+7.  Open the file 'config.ini' in any text editor, under [Carla] entry, change the value of path to the path of CARLA installation directory 
+    
+8.  Run the following command to launch the framework:
+
+`python Editor_UI.py` 
 
 Note: The script will check if CARLA simulator is running, if not it will pass a command to launch it and wait for its availability for connecting clients before launching the framework.
 
