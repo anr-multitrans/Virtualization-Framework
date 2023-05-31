@@ -7,8 +7,8 @@ Additionally, the interface contains several buttons for adding, selecting, modi
 
 ## Requirements
 
--   Carla simulator
--   Python 3.x
+-   Carla simulator (version 0.9.14 or later)
+-   Python 3.x (tested on 3.7.9)
 -   PyQt5
 -   carla
 -   keyboard
@@ -33,6 +33,13 @@ Additionally, the interface contains several buttons for adding, selecting, modi
 5.  Install required packages using pip:
     
 ``pip install -r requirements.txt`` 
+
+   If you face problems in installing PyQt5 try installing it using apt
+
+   ``sudo apt install python3-pyqt5`` 
+  
+  for other requirements please refer to their documentations.
+  Then to make sure all requirements are installed please repeate the ``pip install -r requirements.txt`` 
 
 6.  Navigate using the terminal to the sub-directory "Python":
 

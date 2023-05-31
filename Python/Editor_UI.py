@@ -407,7 +407,7 @@ class MainWindow(QMainWindow):
     thread = threading.Thread(target=run_script, args=(stop_event,))
 
     # Start the thread
-    thread.start()
+    #thread.start()
 
     def record_tick(self, json_array, rgb, semantic_image, img_bb):
         if self.is_running and self.is_recording:
