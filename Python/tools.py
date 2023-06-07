@@ -133,7 +133,8 @@ def launch_carla_server():
 
     print(f"Opening CARLA from path: {carla_path}")
     if os_name == 'Windows':
-        subprocess.Popen([r"C:\CARLA\latest\CarlaUE4.exe"], cwd=carla_path)
+        path_to_run=os.path.join(carla_path, 'CarlaUE4.exe')
+        subprocess.Popen(path_to_run, cwd=carla_path)
     elif os_name == 'Linux':
         path_to_run=os.path.join(carla_path, 'CarlaUE4.sh')
         subprocess.Popen([path_to_run, '-opengl'], cwd=carla_path)
