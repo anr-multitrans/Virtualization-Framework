@@ -130,11 +130,14 @@ def check_carla_server():
 def launch_carla_server():
     # launch the Carla server
     os_name = platform.system()
-    print(f"Opening CARLA from path: {os.path.join(carla_path, 'CarlaUE4.exe')}")
+
+    print(f"Opening CARLA from path: {carla_path}")
     if os_name == 'Windows':
-        subprocess.Popen([r"C:\CARLA\latest\CarlaUE4.exe"], cwd=carla_path)
+        path_to_run=os.path.join(carla_path, 'CarlaUE4.exe')
+        subprocess.Popen(path_to_run, cwd=carla_path)
     elif os_name == 'Linux':
-        subprocess.Popen(['CarlaUE4.sh', '-opengl'], cwd=carla_path)
+        path_to_run=os.path.join(carla_path, 'CarlaUE4.sh')
+        subprocess.Popen([path_to_run, '-opengl'], cwd=carla_path)
     else:
         print('Unsupported operating system')
 
