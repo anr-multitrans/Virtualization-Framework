@@ -4,6 +4,7 @@ from PyQt5.QtCore import QUrl
 from PyQt5.QtGui import QDesktopServices, QIcon
 from PyQt5.QtGui import QIcon, QImage, QPixmap
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
+#from PyQt5.QtCore import AspectRatioMode
 from PyQt5 import QtGui
 import time
 from carla import ColorConverter
@@ -56,7 +57,7 @@ class MainWindow(QMainWindow):
         
         super().__init__()
 
-        self.scenario_length=1000
+        self.scenario_length=20000
         self.scenario_tick = 0
         self.progress_updated = pyqtSignal(int)
         self.x = 0
@@ -73,7 +74,10 @@ class MainWindow(QMainWindow):
         self.is_running= False
         self.is_recording = True
         self.is_step_by_step=False
-        
+        self.desired_width = 1280
+        self.desired_height = 1024
+        self.sensor_width=1280
+        self.sesor_height=1024
         self.init_ui()
         # Initialize the CARLA client and world
         self.init_carla_client()
@@ -86,7 +90,7 @@ class MainWindow(QMainWindow):
 
         # Set the weather parameters
         self.set_weather_parameters()
-        self.K = self.build_projection_matrix(1280, 1024, 90)
+        self.K = self.build_projection_matrix(self.sensor_width, self.sesor_height, 90)
         self.init_carla_scenario()
         #self.carla_setup()
         # Call other functions to initialize other variables if needed
@@ -105,20 +109,22 @@ class MainWindow(QMainWindow):
         self.vehicle = self.world.spawn_actor(vehicle_bp, vehicle_transform)
 
         self.rgb_camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
-        self.rgb_camera_bp.set_attribute('image_size_x', '1280')
-        self.rgb_camera_bp.set_attribute('image_size_y', '1024')
+        self.rgb_camera_bp.set_attribute('image_size_x', '%d' % self.sensor_width)
+        self.rgb_camera_bp.set_attribute('image_size_y',  '%d' %self.sesor_height )
         self.rgb_camera_bp.set_attribute('fov', '90')
+        self.rgb_camera_bp.set_attribute('sensor_tick', '0.0')
         self.rgb_camera_transform = carla.Transform(carla.Location(x=2, z=1.5, y=0))
 
         self.rgb_ref_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
-        self.rgb_ref_bp.set_attribute('image_size_x', '1280')
-        self.rgb_ref_bp.set_attribute('image_size_y', '1024')
+        self.rgb_ref_bp.set_attribute('image_size_x', '%d' %self.sensor_width)
+        self.rgb_ref_bp.set_attribute('image_size_y','%d' % self.sesor_height)
         self.rgb_ref_bp.set_attribute('fov', '90')
+        self.rgb_ref_bp.set_attribute('sensor_tick', '0.0')
         self.rgb_ref_transform=  self.rgb_camera_transform
 
         self.seg_camera_bp = self.world.get_blueprint_library().find('sensor.camera.semantic_segmentation')
-        self.seg_camera_bp.set_attribute('image_size_x', '1280')
-        self.seg_camera_bp.set_attribute('image_size_y', '1024')
+        self.seg_camera_bp.set_attribute('image_size_x', '%d' %self.sensor_width)
+        self.seg_camera_bp.set_attribute('image_size_y', '%d' %self.sesor_height)
         self.seg_camera_bp.set_attribute('fov', '90')
         self.seg_camera_bp.set_attribute('sensor_tick', '0.0')
         self.seg_camera_transform = self.rgb_camera_transform
@@ -152,7 +158,7 @@ class MainWindow(QMainWindow):
         # Start the timer for updating the real-time views
         self.timer = QTimer()
         #self.timer.timeout.connect(self.update_views)
-        self.timer.start(50)
+        self.timer.start(5000)
         self.rgb_camera.listen(lambda data: sensor_callback(self.world,self.rgb_camera, data,synchro_queue,"rgb_camera" , self.K))
         self.rgb_camera_ref.listen(lambda data: sensor_callback(self.world,self.rgb_camera_ref, data,synchro_queue,"rgb_camera_ref",self.K))
         #self.rgb_camera.listen(lambda data: self.update_bounding_box_view(data))
@@ -241,6 +247,8 @@ class MainWindow(QMainWindow):
         vbox = QVBoxLayout()
         vbox.addWidget(self.radio2D)
         vbox.addWidget(self.radio3D)
+        self.radio2D.toggled.connect(self.on_radio2D_toggled)
+        self.radio3D.toggled.connect(self.on_radio3D_toggled)
         
         group_Radio_box.setLayout(vbox)
         # Create a layout and add the group box to it
@@ -248,7 +256,15 @@ class MainWindow(QMainWindow):
         main_bb_vbox.addWidget(group_Radio_box)
 
         return main_bb_vbox
+    def on_radio2D_toggled(self, checked):
+        if checked:
+            self.ThreeD=False
+            # Perform actions specific to the 2D mode
 
+    def on_radio3D_toggled(self, checked):
+        if checked:
+            self.ThreeD=True
+            # Perform actions specific to the 3D mode
     def setup_menu_bar(self):
         menu_bar = self.menuBar()
         scenario_menu = menu_bar.addMenu("Scenario")
@@ -340,7 +356,7 @@ class MainWindow(QMainWindow):
     def init_carla_client(self):
         self.client = carla.Client('localhost', 2000)
         self.client.set_timeout(30.0)
-        self.client.load_world('Town05')
+        #self.client.load_world('Town05')
         self.world = self.client.get_world()
         
     def adjust_carla_settings(self):
@@ -407,7 +423,7 @@ class MainWindow(QMainWindow):
     thread = threading.Thread(target=run_script, args=(stop_event,))
 
     # Start the thread
-    #thread.start()
+    thread.start()
 
     def record_tick(self, json_array, rgb, semantic_image, img_bb):
         if self.is_running and self.is_recording:
@@ -574,6 +590,7 @@ class MainWindow(QMainWindow):
     def timerEvent(self, event):
         #print(self.is_running)
         #keyboard.wait('1')
+        #☺self.world.tick()
         if self.is_running and self.scenario_tick>= self.scenario_length:
             self.stop_scenario()
         progress=self.scenario_tick *100 /self.scenario_length
@@ -588,6 +605,7 @@ class MainWindow(QMainWindow):
             transform =None
             rgb_ref=None
             self.x+=1
+            frame=0
             new_vehicle_location = self.vehicle.get_transform().location+ carla.Location(100-self.x,+4,0)
             #self.new_vehicle.set_transform(carla.Transform(new_vehicle_location, self.vehicle.get_transform().rotation))
             try:
@@ -599,6 +617,8 @@ class MainWindow(QMainWindow):
                 for _ in range(len(self.synchro_list)):
                     s_frame = synchro_queue.get(True, 10.0)
                     #print("    Frame: %d   Sensor: %s" % (s_frame[0], s_frame[1]))
+                    frame=s_frame[0]
+
                     if s_frame[1] == "rgb_camera":
                         rgb_image=self.get_RGB_DATA(s_frame[2])
                     if s_frame[1] == "rgb_camera_ref":
@@ -611,12 +631,14 @@ class MainWindow(QMainWindow):
                         transform= s_frame[2]
                     #print(s_frame[1] )
                     #print(s_frame[2] )
+                    print(frame)
                 if rgb_image!=None and boxes!=None and transform!=None :
                     #print(rgb_image.width)
-                    if self.ThreeD:
-                        self.update_bounding_box_view_3D(self.rgb_camera,rgb_image,segmentation_image,boxes,transform)
-                    else:
-                        self.update_bounding_box_view_smart(self.rgb_camera,rgb_image,segmentation_image,boxes,transform)
+                    if frame%20==0:
+                        if self.ThreeD:
+                            self.update_bounding_box_view_3D(self.rgb_camera,rgb_image,segmentation_image,boxes,transform,rgb_ref)
+                        else:
+                            self.update_bounding_box_view_smart(self.rgb_camera,rgb_image,segmentation_image,boxes,transform,rgb_ref)
                 else:
                     print("at least one of these data is missing:")
                     if rgb_image==None:
@@ -659,11 +681,13 @@ class MainWindow(QMainWindow):
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (image.height, image.width, 4))
         qimage = QtGui.QImage(array.data, image.width, image.height, QtGui.QImage.Format_RGB32)
-        pixmap = QtGui.QPixmap.fromImage(qimage)
+        #pixmap = QtGui.QPixmap.fromImage(qimage)
+        scaled_qimage = qimage.scaled(self.desired_width, self.desired_height, Qt.AspectRatioMode.KeepAspectRatio)
+        pixmap = QtGui.QPixmap.fromImage(scaled_qimage)
         self.label_rgb.setPixmap(pixmap)
         actors = self.world.get_actors()
         objects = self.selected_labels
-        return image
+        return self.get_RGB_DATA(image)
 
     def build_projection_matrix(self, w, h, fov):
         focal = w / (2.0 * np.tan(fov * np.pi / 360.0))
@@ -759,17 +783,17 @@ class MainWindow(QMainWindow):
         distance = camera_location.distance(bounding_box_center)
         return distance
 
-    def update_bounding_box_view_smart(self, camera, image, semantic_image, bounding_box_set, transform):
+    def update_bounding_box_view_smart(self, camera, image, semantic_image, bounding_box_set, transform,image_ref):
         json_array = []
         world_2_camera = np.array(transform.get_inverse_matrix())
         #print("world_2_camera")
         edges = [[0,1], [1,3], [3,2], [2,0], [0,4], [4,5], [5,1], [5,7], [7,6], [6,4], [6,2], [7,3]]
         img = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-        rgb = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        rgb = np.frombuffer(image_ref.raw_data, dtype=np.dtype("uint8"))
         #print("frombuffer")
         img = np.reshape(img, (image.height, image.width, 4))
         rgb = np.reshape(rgb, (image.height, image.width, 4))
-        rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        #rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         #print("reshape")
         #ego_bb = self.vehicle.bounding_box
         bb_id=0
@@ -838,11 +862,14 @@ class MainWindow(QMainWindow):
         self.record_tick(json_array,rgb,semantic_image,img)
         # Convert the image back to a QImage object and display it
         qimage = QtGui.QImage(img.data, image.width, image.height, QtGui.QImage.Format_RGB32)
-        pixmap = QtGui.QPixmap.fromImage(qimage)
+        scaled_qimage = qimage.scaled(self.desired_width, self.desired_height, Qt.AspectRatioMode.KeepAspectRatio)
+        pixmap = QtGui.QPixmap.fromImage(scaled_qimage)
+        #pixmap = QtGui.QPixmap.fromImage(qimage)
+        
         self.label_bounding.setPixmap(pixmap)
         self.ImageCounter += 1
 
-    def update_bounding_box_view_3D(self, camera, image, semantic_image, bounding_box_set, transform):
+    def update_bounding_box_view_3D(self, camera, image, semantic_image, bounding_box_set, transform,image_ref):
         # Convert the Image object to a QImage object
          # Define percentage to reduce bounding box size by
         reduction_percentage = 0.1
@@ -850,7 +877,7 @@ class MainWindow(QMainWindow):
         world_2_camera = np.array(camera.get_transform().get_inverse_matrix())
         edges = [[0,1], [1,3], [3,2], [2,0], [0,4], [4,5], [5,1], [5,7], [7,6], [6,4], [6,2], [7,3]]
         img = np.frombuffer(copyImageData(image), dtype=np.dtype("uint8"))#np.frombuffer(copy.deepcopy(image.raw_data), dtype=np.dtype("uint8"))
-        rgb = np.frombuffer(copyImageData(image), dtype=np.dtype("uint8"))#np.frombuffer(copy.deepcopy(image.raw_data), dtype=np.dtype("uint8"))
+        rgb = np.frombuffer(copyImageData(image_ref), dtype=np.dtype("uint8"))#np.frombuffer(copy.deepcopy(image.raw_data), dtype=np.dtype("uint8"))
         rgb = np.reshape(rgb, (image.height, image.width, 4))
         #rgb = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         img = np.reshape(img, (image.height, image.width, 4))
@@ -948,7 +975,9 @@ class MainWindow(QMainWindow):
         #pixmap = QtGui.QPixmap.fromImage(qimage)
 
         # Convert the QImage object to a QPixmap object and display it
-        pixmap = QtGui.QPixmap.fromImage(qimage)
+        #pixmap = QtGui.QPixmap.fromImage(qimage)
+        scaled_qimage = qimage.scaled(self.desired_width, self.desired_height, Qt.AspectRatioMode.KeepAspectRatio)
+        pixmap = QtGui.QPixmap.fromImage(scaled_qimage)
         self.label_bounding.setPixmap(pixmap)
         self.ImageCounter += 1
 
@@ -966,7 +995,9 @@ class MainWindow(QMainWindow):
         #qimage = qimage.rgbSwapped()
         #self.semsegConversion(qimage)
         #qimage.setColorTable(palette_list)
-        pixmap = QtGui.QPixmap.fromImage(qimage)
+        scaled_qimage = qimage.scaled(self.desired_width, self.desired_height, Qt.AspectRatioMode.KeepAspectRatio)
+        pixmap = QtGui.QPixmap.fromImage(scaled_qimage)
+        #pixmap = QtGui.QPixmap.fromImage(qimage)
         self.label_seg.setPixmap(pixmap)
         return image
         #self.camera_tick +=1
@@ -1005,9 +1036,9 @@ class MainWindow(QMainWindow):
     }
     bb_max_dim = {
         'Pedestrians' : (1,2.5),
-        'Bicycle' : (4,2),
-        'Motorcycle' : (4,2),
-        'Rider' : (4,2.5)
+        'Bicycle' : (3,2),
+        'Motorcycle' : (3,2),
+        'Rider' : (2,2.5)
 
     }
     def create_directory(self, scenario_name):

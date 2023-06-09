@@ -26,7 +26,7 @@ def copyImageData(source_image):
 synchro_queue = Queue()
 
 ImageObj = namedtuple('ImageObj', ['raw_data', 'width', 'height', 'fov'])
-selected_labels=['Bicycle','Bus','Car','Motorcycle','Rider','Static','traffic_light','traffic_sign','Truck']
+selected_labels=['Bicycle','Bus','Car','Motorcycle','Rider','Pedestrians','traffic_light','traffic_sign','Truck']
 bb_labels= {
     #'Any' : carla.CityObjectLabel.Any,
     'Bicycle' : carla.CityObjectLabel.Bicycle,
@@ -109,6 +109,7 @@ def sensor_callback(world, actor, sensor_data, synchro_queue, sensor_name,K=None
         camera_transform= carla.Transform(transform.location, transform.rotation)
         synchro_queue.put((sensor_data.frame, "bounding_boxes",bounding_boxes_3d))
         synchro_queue.put((sensor_data.frame, "camera_transform",camera_transform))
+        #print(sensor_data.frame)
 
     synchro_queue.put((sensor_data.frame, sensor_name,sensor_data))
 
