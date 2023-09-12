@@ -1,0 +1,150 @@
+{
+  "categories": [
+    {
+      "name": "Scenario Level",
+      "subcategories": [
+       {
+          "name": "Anomalous Scenario",
+          "examples": [
+            {
+              "name": "Person walking onto the street",
+              "implemented": true
+            },
+            {
+              "name": "Car accident",
+              "implemented": true
+            },
+            {
+              "name": "Actor breaks traffic rules",
+              "implemented": false
+            }
+          ]
+        },
+        {
+          "name": "Novel Scenario",
+          "examples": [
+            {
+              "name": "Actor coming from side road",
+              "implemented": false
+            },
+            {
+              "name": "accessing freeway",
+              "implemented": false
+            }
+          ]
+        },
+        {
+          "name": "Risky Scenario",
+          "examples": [
+            {
+              "name": "Short time to collision",
+              "implemented": false
+            },
+            {
+              "name": "Overtaking",
+              "implemented": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Scene Level",
+      "subcategories": [
+        {
+          "name": "Collective Anomaly",
+          "examples": [
+            {
+              "name": "traffic jam",
+              "implemented": false
+            }
+          ]
+        },
+        {
+          "name": "Contextual Anomaly",
+          "examples": [
+            {
+              "name": "tree on street",
+              "implemented": false
+            },
+            {
+              "name": "Barrier on street",
+              "implemented": false
+            },
+            {
+              "name": "random objects on street",
+              "implemented": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Object Level",
+      "subcategories": [
+        {
+          "name": "Single Point Anomaly",
+          "examples": [
+            {
+              "name": " Trash",
+              "implemented": false
+			  },
+            {
+              "name": "Lost objects",
+              "implemented": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Domain Level",
+      "subcategories": [
+        {
+          "name": "Domain shift",
+          "examples": [
+            {
+              "name": " Weather conditions change",
+              "implemented": false
+            },
+            {
+              "name": "Location change",
+              "implemented": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pixel Level",
+      "subcategories": [
+        {
+          "name": "Local outlaier",
+          "examples": [
+            {
+              "name": "Dead Pixels",
+              "implemented": false
+            },
+            {
+              "name": " Dirt on the windowshield",
+              "implemented": false
+            }
+          ]
+        },
+        {
+          "name": "Global outlaier",
+          "examples": [
+            {
+              "name": "Lighting coditions",
+              "implemented": false
+            },
+            {
+              "name": "Over exposure",
+              "implemented": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

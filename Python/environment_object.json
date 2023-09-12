@@ -1,0 +1,174 @@
+{
+  "Props catalogue": {
+    "Containers": {
+      "Barrels": {
+        "Barrel": "static.prop.barrel"
+      },
+      "Bins": {
+        "Bin": "static.prop.bin",
+        "Cloth container": "static.prop.clothcontainer",
+        "Garbage container": "static.prop.container",
+        "Glass container": "static.prop.glasscontainer"
+      },
+      "Boxes": {
+        "Box 01": "static.prop.box01",
+        "Box 02": "static.prop.box02",
+        "Box 03": "static.prop.box03",
+        "Creased box 01": "static.prop.creasedbox01",
+        "Creased box 02": "static.prop.creasedbox02",
+        "Creased box 03": "static.prop.creasedbox03"
+      }
+    },
+    "Garbage": {
+      "Bags": {
+        "Trash bag": "static.prop.trashbag"
+      },
+      "Garbage": {
+        "Cola can": "static.prop.colacan",
+        "Garbage 01": "static.prop.garbage01",
+        "Garbage 02": "static.prop.garbage02",
+        "Garbage 03": "static.prop.garbage03",
+        "Garbage 04": "static.prop.garbage04",
+        "Garbage 05": "static.prop.garbage04",
+        "Garbage 06": "static.prop.garbage06"
+      },
+      "Platforms": {
+        "Garbage platform 01": "static.prop.platformgarbage01"
+      },
+      "Trash cans": {
+        "Trash can 01": "static.prop.trashcan01",
+        "Trash can 02": "static.prop.trashcan02",
+        "Trash can 03": "static.prop.trashcan03",
+        "Trash can 04": "static.prop.trashcan04",
+        "Trash can 05": "static.prop.trashcan05"
+      }
+    },
+    "Park / garden Object": {
+      "Furniture": {
+        "Bench 03": "static.prop.bench03",
+        "Garden lamp": "static.prop.gardenlamp",
+        "Pergola": "static.prop.pergola",
+        "Plastic chair": "static.prop.plasticchair",
+        "Plastic table": "static.prop.plastictable",
+        "Slide": "static.prop.slide",
+        "Swing": "static.prop.swing",
+        "Swingcouch": "static.prop.swingcouch",
+        "Table": "static.prop.table",
+        "Trampoline": "static.prop.trampoline"
+      },
+      "Misc": {
+        "Barbeque": "static.prop.barbeque",
+        "Clothesline": "static.prop.clothesline",
+        "Doghouse": "static.prop.doghouse",
+        "Gnome": "static.prop.gnome",
+        "Wateringcan": "static.prop.wateringcan"
+      },
+      "Other": {
+        "Haybale": "static.prop.haybale",
+        "Haybale alternate": "static.prop.haybalelb"
+      },
+      "Plantpots": {
+        "Plantpot 01": "static.prop.plantpot01",
+        "Plantpot 02": "static.prop.plantpot02",
+        "Plantpot 03": "static.prop.plantpot03",
+        "Plantpot 04": "static.prop.plantpot04",
+        "Plantpot 05": "static.prop.plantpot05",
+        "Plantpot 06": "static.prop.plantpot06",
+        "Plantpot 07": "static.prop.plantpot07",
+        "Plantpot 08": "static.prop.plantpot08"
+      }
+    },
+    "Personal Object": {
+      "Bags": {
+        "Plastic bag": "static.prop.plasticbag",
+        "Shopping bag": "static.prop.shoppingbag"
+      },
+      "Carts": {
+        "Shopping cart": "static.prop.shoppingcart",
+        "Shopping trolley": "static.prop.shoppingtrolley"
+      },
+      "Cases": {
+        "Briefcase": "static.prop.briefcase",
+        "Guitarcase": "static.prop.guitarcase",
+        "Travel case": "static.prop.travelcase"
+      },
+      "Clothing": {
+        "Bike helmet": "static.prop.bike helmet",
+        "Motor helmet": "static.prop.motorhelmet"
+      },
+      "Personal effects": {
+        "Mobile": "static.prop.mobile",
+        "Purse": "static.prop.purse"
+      }
+    },
+    "Road Object": {
+      "Barriers": {
+        "Street barrier": "static.prop.streetbarrier"
+      },
+      "Cones": {
+        "Construction cone": "static.prop.constructioncone",
+        "Traffic cone 01": "static.prop.trafficcone01",
+        "Traffic cone 02": "static.prop.trafficcone02"
+      },
+      "Construction": {
+        "Iron plank": "static.prop.ironplank",
+        "Warning construction": "static.prop.warningconstruction"
+      },
+      "Debris": {
+        "Brokentile 01": "static.prop.brokentile01",
+        "Brokentile 02": "static.prop.brokentile02",
+        "Brokentile 03": "static.prop.brokentile03",
+        "Brokentile 04": "static.prop.brokentile04",
+        "Dirt / debris 01": "static.prop.dirtdebris01",
+        "Dirt / debris 02": "static.prop.dirtdebris02",
+        "Dirt / debris 03": "static.prop.dirtdebris03"
+      },
+      "Signs": {
+        "Traffic warning": "static.prop.trafficwarning",
+        "Warning accident": "static.prop.warningaccident"
+      }
+    },
+    "Sidewalk Object": {
+      "Barriers": {
+        "Chain barrier": "static.prop.chainbarrier",
+        "Chain barrier end": "static.prop.chainbarrierend",
+        "Parking Barriers": "ParkingBarrier2"
+      },
+      "Benches": {
+        "Bench 01": "static.prop.bench01",
+        "Bench 02": "static.prop.bench02"
+      },
+      "Commercial": {
+        "Foodcart": "static.prop.foodcart",
+        "Kiosk 01": "static.prop.kiosk_01"
+      },
+      "Monouments": {
+        "Fountain": "static.prop.fountain"
+      },
+      "Monuments": {
+        "Map table": "static.prop.maptable"
+      },
+      "Signs": {
+        "Advertisement": "static.prop.advertisement",
+        "Street sign": "static.prop.streetsign",
+        "Street sign 01": "static.prop.streetsign01",
+        "Street sign 04": "static.prop.streetsign04"
+      },
+      "Transport Object": {
+        "Bus stop": "static.prop.busstop",
+        "Bus stop alternate": "static.prop.busstoplb"
+      },
+      "Utilities": {
+        "ATM": "static.prop.atm",
+        "Mailbox": "static.prop.mailbox",
+        "Street fountain": "static.prop.streetfountain",
+        "Vending machine": "static.prop.vendingmachine"
+      }
+    },
+    "Utility": {
+      "Calibration": {
+        "Calibrator": "static.prop.calibrator"
+      }
+    }
+  }
+}
