@@ -1,0 +1,16 @@
+- type: spectator
+  location: [-53, 55, 1]
+  orientation: [0, 90, 0]
+
+- type: spawn_vehicle
+  vehicle_id: v1
+  location: [20,5, 0]
+  orientation: [0, 0, 0]
+  speed: 0.95
+
+- type: spawn_vehicle
+  vehicle_id: v2
+  location: [10, -2, 0]
+  orientation: [-20, 87, 0]
+  speed: 0.0
+  
