@@ -227,6 +227,7 @@ def copyImageData(source_image):
 synchro_queue = Queue()
 
 ImageObj = namedtuple('ImageObj', ['raw_data', 'width', 'height', 'fov'])
+<<<<<<< HEAD
 selected_labels = ['bicycle', 'bus', 'car', 'motorcycle', 'cyclist', 'pedestrian', 'traffic_light', 'traffic_sign',
                    'truck']
 bb_labels = {
@@ -260,6 +261,40 @@ bb_labels = {
     'vegetation': carla.CityObjectLabel.Vegetation,
     'walls': carla.CityObjectLabel.Walls,
     'water': carla.CityObjectLabel.Water
+=======
+selected_labels=['Bicycle','Bus','Car','Motorcycle','Rider','Pedestrians','traffic_light','traffic_sign','Truck']
+bb_labels= {
+    #'Any' : carla.CityObjectLabel.Any,
+    'Bicycle' : carla.CityObjectLabel.Bicycle,
+    #'Bridge' : carla.CityObjectLabel.Bridge,
+    'Buildings' : carla.CityObjectLabel.Buildings,
+    'Bus' : carla.CityObjectLabel.Bus,
+    'Car' : carla.CityObjectLabel.Car,
+    'Dynamic' : carla.CityObjectLabel.Dynamic,
+    'Fences' : carla.CityObjectLabel.Fences,
+    'Ground' : carla.CityObjectLabel.Ground,
+    'GuardRail' : carla.CityObjectLabel.GuardRail,
+    'Motorcycle' : carla.CityObjectLabel.Motorcycle,
+    #'NONE' : carla.CityObjectLabel.NONE,
+    'Other' : carla.CityObjectLabel.Other,
+    'Pedestrians' : carla.CityObjectLabel.Pedestrians,
+    #'Poles' : carla.CityObjectLabel.Poles,
+    'RailTrack' : carla.CityObjectLabel.RailTrack,
+    'Rider' : carla.CityObjectLabel.Rider,
+    'RoadLines' : carla.CityObjectLabel.RoadLines,
+    'Roads' : carla.CityObjectLabel.Roads,
+    'Sidewalks' : carla.CityObjectLabel.Sidewalks,
+    'Sky' : carla.CityObjectLabel.Sky,
+    'Static' : carla.CityObjectLabel.Static,
+    'Terrain' : carla.CityObjectLabel.Terrain,
+    'traffic_light' : carla.CityObjectLabel.TrafficLight,
+    'traffic_sign' : carla.CityObjectLabel.TrafficSigns,
+    #'Train' : carla.CityObjectLabel.Train,
+    'Truck' : carla.CityObjectLabel.Truck,
+    'Vegetation' : carla.CityObjectLabel.Vegetation,
+    'Walls' : carla.CityObjectLabel.Walls,
+    'Water' : carla.CityObjectLabel.Water
+>>>>>>> main
 
 }
 
@@ -437,6 +472,7 @@ def sensor_callback(world, actor, sensor_data, synchro_queue, sensor_name, K=Non
         # print(sensor_data.frame)
 
     synchro_queue.put((sensor_data.frame, sensor_name, sensor_data))
+
 
 
 config = configparser.ConfigParser()
