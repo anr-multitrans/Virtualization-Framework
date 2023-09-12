@@ -24,8 +24,7 @@ import subprocess
 import platform
 import threading
 import configparser
-import psutil
-import carla
+
 from Synchro3 import run_carla_simulation
 from image_tools import post_process
 from tools import (
