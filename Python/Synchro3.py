@@ -212,7 +212,7 @@ def run_carla_simulation(rgb_label=None, semantic_label=None, instance_label=Non
             os.makedirs('images/semantic_segmentation', exist_ok=True)
             os.makedirs('images/instance_segmentation', exist_ok=True)
             os.makedirs('images/simulation_objects',exist_ok=True)
-            os.makedirs('labels', exist_ok=True)
+            os.makedirs('images/labels', exist_ok=True)
 
 
             num_objects = 100

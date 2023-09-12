@@ -227,41 +227,7 @@ def copyImageData(source_image):
 synchro_queue = Queue()
 
 ImageObj = namedtuple('ImageObj', ['raw_data', 'width', 'height', 'fov'])
-<<<<<<< HEAD
-selected_labels = ['bicycle', 'bus', 'car', 'motorcycle', 'cyclist', 'pedestrian', 'traffic_light', 'traffic_sign',
-                   'truck']
-bb_labels = {
-    # 'Any' : carla.CityObjectLabel.Any,
-    'bicycle': carla.CityObjectLabel.Bicycle,
-    # 'Bridge' : carla.CityObjectLabel.Bridge,
-    'building': carla.CityObjectLabel.Buildings,
-    'bus': carla.CityObjectLabel.Bus,
-    'car': carla.CityObjectLabel.Car,
-    'dynamic': carla.CityObjectLabel.Dynamic,
-    'fence': carla.CityObjectLabel.Fences,
-    'ground': carla.CityObjectLabel.Ground,
-    'guard_rail': carla.CityObjectLabel.GuardRail,
-    'motorcycle': carla.CityObjectLabel.Motorcycle,
-    # 'NONE' : carla.CityObjectLabel.NONE,
-    'other': carla.CityObjectLabel.Other,
-    'pedestrian': carla.CityObjectLabel.Pedestrians,
-    # 'Poles' : carla.CityObjectLabel.Poles,
-    'rail_track': carla.CityObjectLabel.RailTrack,
-    'cyclist': carla.CityObjectLabel.Rider,
-    'road_lines': carla.CityObjectLabel.RoadLines,
-    'roads': carla.CityObjectLabel.Roads,
-    'sidewalks': carla.CityObjectLabel.Sidewalks,
-    'sky': carla.CityObjectLabel.Sky,
-    'static': carla.CityObjectLabel.Static,
-    'terrain': carla.CityObjectLabel.Terrain,
-    'traffic_light': carla.CityObjectLabel.TrafficLight,
-    'traffic_sign': carla.CityObjectLabel.TrafficSigns,
-    # 'Train' : carla.CityObjectLabel.Train,
-    'truck': carla.CityObjectLabel.Truck,
-    'vegetation': carla.CityObjectLabel.Vegetation,
-    'walls': carla.CityObjectLabel.Walls,
-    'water': carla.CityObjectLabel.Water
-=======
+
 selected_labels=['Bicycle','Bus','Car','Motorcycle','Rider','Pedestrians','traffic_light','traffic_sign','Truck']
 bb_labels= {
     #'Any' : carla.CityObjectLabel.Any,
@@ -294,7 +260,6 @@ bb_labels= {
     'Vegetation' : carla.CityObjectLabel.Vegetation,
     'Walls' : carla.CityObjectLabel.Walls,
     'Water' : carla.CityObjectLabel.Water
->>>>>>> main
 
 }
 
