@@ -49,8 +49,15 @@ Additionally, the interface contains several buttons for adding, selecting, modi
     
 8.  Run the following command to launch the framework:
 
-`python Editor_UI.py` 
+`python new_ui.py` 
 
 Note: The script will check if CARLA simulator is running, if not it will pass a command to launch it and wait for its availability for connecting clients before launching the framework.
+
+This user interface allow launching simulation scenarios and frgitering sensor data in form of (rgb, semantic_segmentation, and instance segmentation) images in addition to JSON files describing the nature of each object in ths simulation at avery tick
+
+9. after running the simulation, if labels are not generated automatically, you may need to run the post processing script, that post-process the images and associate each of them them with a JSON file labeling the bounding boxes of every simulation object appearing in the image.
+
+    `python new_ui.py` 
+
 
 In case of any issues with the installation or running the framework, refer to the documentation or raise an issue on the Github repository.
