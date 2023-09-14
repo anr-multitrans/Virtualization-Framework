@@ -273,7 +273,7 @@ def draw_bounding_boxes2(image_path, bounding_boxes):
         max_y = bb['max_y']
         base_label = bb['base_label']
         other_labels = bb['other_labels']
-        if True: #base_label == "static" or base_label == "dynamic":            
+        if not base_label == 'unknown': #base_label == "static" or base_label == "dynamic":            
             # Get color based on base_label
             color = CLASS_MAPPING[base_label]
             #label_text = f"{base_label} {id_} : {', '.join(other_labels)}"
@@ -502,7 +502,49 @@ def refine_bbs(sensor_info_path, bounding_boxes_path, output_path, catalog_keywo
     
     return refined_bounding_boxes
 
+def process_instance_semantic_segmentation1(instance_image_path, semantic_image_path, class_mapping):
+    def process_color(color):
+        bounding_boxes = []
+        if np.array_equal(color, [0, 0, 0]):
+            return []
 
+        color_mask = np.all(instance_array == color, axis=2)
+        labeled_mask = cv2.connectedComponents((color_mask * 255).astype(np.uint8))[1]
+
+        regions, counts = np.unique(labeled_mask, return_counts=True)
+        for region_id in regions[1:]:  # Skip the background region
+            if counts[region_id] < 4:  # Adjust the threshold as needed
+                continue
+
+            region_mask = (labeled_mask == region_id)
+            min_x, min_y, max_x, max_y = cv2.boundingRect(region_mask.astype(np.uint8))
+
+            if min_x == max_x or min_y == max_y:
+                continue
+
+            # Extract the most common semantic color within the object's mask
+            object_semantic_colors = semantic_array[region_mask]
+            unique_semantic_colors, semantic_counts = np.unique(object_semantic_colors, axis=0, return_counts=True)
+            object_rgb_color = unique_semantic_colors[np.argmax(semantic_counts)]
+
+            label = class_mapping.get(tuple(object_rgb_color.tolist()), "unknown")
+            bounding_boxes.append((id_counter[0], min_x, min_y, max_x, max_y, label))
+            id_counter[0] += 1
+
+        return bounding_boxes
+
+    with Image.open(instance_image_path) as instance_image, Image.open(semantic_image_path) as semantic_image:
+        instance_array = np.array(instance_image)
+        semantic_array = np.array(semantic_image)[:, :, :-1]
+
+    unique_colors = np.unique(instance_array.reshape(-1, instance_array.shape[2]), axis=0)
+    id_counter = [0]  # Using a list to make it mutable for the ThreadPoolExecutor
+
+    with ThreadPoolExecutor() as executor:
+        results = executor.map(process_color, unique_colors)
+        result = [item for sublist in results for item in sublist]
+
+    return result
 
 def process_batch(batch_folder, keywords_dict):
     rgb_folder_path = os.path.join(batch_folder, 'rgb')
@@ -519,7 +561,7 @@ def process_batch(batch_folder, keywords_dict):
             #instance_image = Image.open(instance_image_path)
 
             # Process instance and semantic segmentation images
-            result = process_instance_semantic_segmentation_(instance_image_path, semantic_image_path, CLASS_MAPPING)
+            result = process_instance_semantic_segmentation1(instance_image_path, semantic_image_path, CLASS_MAPPING)
 
             # Save processed results to JSON
             result_json = f'output_{frame_number}.json'
@@ -548,7 +590,7 @@ if __name__ == '__main__':
     
     multiprocessing.freeze_support()
 
-    batch_folder = r'images'
+    batch_folder = 'images'
     catalog_json_filename = 'environment_object.json'
     with open(catalog_json_filename, 'r') as json_file:
         json_data = json.load(json_file)
