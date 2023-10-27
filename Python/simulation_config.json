@@ -1,0 +1,16 @@
+{
+  "map": "Town09",
+  "objects": {
+    "vehicle": 0,
+    "pedestrian": 7,
+    "cyclist": 0,
+    "motorcycle": 0,
+    "specific": {
+      "cone":15,
+      "dirt": 10,
+      "barrier" : 5
+    },
+    "other": 0 },
+  "distribution_range": 20,
+  "nb_images": 2
+}

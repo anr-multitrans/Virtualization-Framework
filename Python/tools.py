@@ -13,20 +13,27 @@ import math
 import time
 import cv2
 import sys
+import json
 #from PyQt5.QtGui import QIcon, QImage, QPixmap
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt  #QTimer, QThread, pyqtSignal
-
+selected_labels=['Bicycle','Bus','Car','Motorcycle','Rider','Pedestrians','traffic_light','traffic_sign','Truck']
+labels_of_interest = ['fence','cyclist','pedestrian','pole','bicycle','bus','car','truck','motorcycle','traffic_sign','traffic_light','static','dynamic']
 messages = []
 CLASS_MAPPING = {
     'unlabeled': (0, 0, 0),
     'building': (70, 70, 70),
+    'buildings': (70, 70, 70),
     'fence': (100, 40, 40),
+    'fences': (100, 40, 40),
     'other': (55, 90, 80),
     'pedestrian': (220, 20, 60),
+    'pedestrians': (220, 20, 60),
     'cyclist': (255, 0, 0),
+    'rider':(255,0,0),
     'pole': (153, 153, 153),
     'roadLines': (157, 234, 50),
+    'roadlines': (157, 234, 50),
     'roads': (128, 64, 128),
     'sidewalks': (244, 35, 232),
     'vegetation': (107, 142, 35),
@@ -42,7 +49,9 @@ CLASS_MAPPING = {
     'ground': (81, 0, 81),
     'bridge': (150, 100, 100),
     'rail_track': (230, 150, 140),
+    'railtrack' : (230, 150, 140),
     'guard_rail': (180, 165, 180),
+    'guardrail' :  (180, 165, 180),
     'traffic_light': (250, 170, 30),
     'static': (110, 190, 160),
     'dynamic': (170, 120, 50),
@@ -50,7 +59,92 @@ CLASS_MAPPING = {
     'terrain': (145, 170, 100)
 }
 multiple_bbox_tags = ['sidewalks', 'vegetation', 'traffic_sign', 'sky', 'traffic_light', 'static', 'dynamic']
+def color_to_label(color, semantic_tags):
+    # Extract the blue channel (B) from the color
+    blue_channel = color[0]
 
+    for tag, data in semantic_tags.items():
+        if 'id' in data and data['id'] == blue_channel:
+            return tag
+
+    # If no matching label is found, return a default label
+    return 'unknown'
+def find_color_in_semantic_colors(color_to_find, semantic_colors, width):
+    flattened_semantic_colors = semantic_colors.tolist()
+    matches = np.where(np.all(semantic_colors == color_to_find, axis=1))[0]
+    
+    if len(matches) > 0:
+        y, x = np.unravel_index(matches[0], (width, len(semantic_colors) // width))
+        return x, y
+    else:
+        return None
+def list_distinct_colors(semantic_colors):
+    if len(semantic_colors.shape) == 2:
+        # For (height*width, 3) shape, convert to list of tuples
+        semantic_colors_list = semantic_colors.tolist()
+    else:
+        # For (height, width, 3) shape, flatten and convert to list of tuples
+        semantic_colors_list = semantic_colors.reshape(-1, 3).tolist()
+
+    distinct_colors = list(set(map(tuple, semantic_colors_list)))
+    return distinct_colors
+
+def list_distinct_colors_2(semantic_colors):
+    semantic_colors_list = semantic_colors.tolist()
+    distinct_colors = list(set(map(tuple, map(tuple, semantic_colors_list))))
+    return distinct_colors
+
+def merge_segmentation_images(instance_segmentation, semantic_segmentation):
+    height, width, channels = semantic_segmentation.shape
+
+    if channels == 4:  # Check for RGBA format and suppress the alpha channel
+        semantic_segmentation = semantic_segmentation[:, :, :3]
+        instance_segmentation = instance_segmentation[:, :, :3]
+    
+    merged_image = np.zeros((height, width, 3), dtype=np.uint8)
+    semantic_colors_bgr = semantic_segmentation.reshape(-1, 3)
+    instance_colors_bgr = instance_segmentation.reshape(-1, 3)
+    ldst=list_distinct_colors(semantic_colors_bgr)
+    print(ldst)
+    semantic_to_id = {}
+    for tag, data in semantic_tags.items():
+        color = data['color']
+        semantic_to_id[color] = (data['id'], data['id'])
+
+    semantic_colors = semantic_colors_bgr[:, ::-1]
+    instance_colors = instance_colors_bgr[:, ::-1]
+
+    idssdd = find_color_in_semantic_colors((190, 153, 153), semantic_colors, width)
+    print(idssdd)
+
+    mask = np.isin(semantic_colors, np.array(list(semantic_to_id.keys()))).all(axis=1)
+    semantic_color_ids = np.array([semantic_to_id[tuple(color)] for color in semantic_colors])
+
+    merged_image = np.column_stack((semantic_color_ids[:, 0], instance_colors[:, 1], instance_colors[:, 2]))
+    merged_image = merged_image.reshape(height, width, 3)  # 3 channels (Red, Green, Blue)
+
+    return merged_image
+
+
+def move_view(spectator,target_transform):
+    distance_behind = 15  # Adjust the distance behind the target
+    height_above = 15  # Adjust the height above the target
+
+    # Calculate the spectator's position relative to the target
+    rotation_yaw = target_transform.rotation.yaw  # Use the target's yaw as the rotation angle
+    spectator_location = target_transform.location - carla.Location(
+        x=distance_behind * math.cos(math.radians(rotation_yaw)),
+        y=distance_behind * math.sin(math.radians(rotation_yaw)),
+        z=-height_above
+    )
+    #spectator.set_location(spectator_location)
+
+    # Set the spectator's rotation to point towards the target
+    spectator_rotation = carla.Rotation(pitch=-40, yaw=rotation_yaw, roll=0)  # Adjust the rotation angles
+    spectator.set_transform(carla.Transform(spectator_location,spectator_rotation))
+
+
+# Sleep to allow time for the spectator camera to update
 
 def build_projection_matrix(w, h, fov):
     focal = w / (2.0 * np.tan(fov * np.pi / 360.0))
@@ -157,7 +251,218 @@ def move_spectator(world, location, orientation):
     world.tick()
     print("scenario is at")
     print(spectator.get_transform())
+def draw_filtered_bounding_boxes(image_path, bounding_boxes, output_path, labels_of_interest=None):
+    # Read the input image
+    image = cv2.imread(image_path)
 
+    # Create a copy of the image to draw on
+    image_with_boxes = image.copy()
+
+    for bbox in bounding_boxes:
+        # Extract bounding box coordinates, label, and color
+        min_x, max_x, min_y, max_y = bbox['min_x'], bbox['max_x'], bbox['min_y'], bbox['max_y']
+        color = bbox['color']
+        label = bbox.get('label', '')  # Get the label or use an empty string if not provided
+
+        # Check if the label is in the list of labels of interest
+        if labels_of_interest is not None and label not in labels_of_interest:
+            continue  # Skip drawing if the label is not of interest
+
+        # Draw the bounding box on the image
+        cv2.rectangle(image_with_boxes, (min_x, min_y), (max_x, max_y), color, thickness=2)
+
+        # Add label text if provided
+        if label:
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(image_with_boxes, label, (min_x, min_y - 10), font, 0.5, color, 2)
+
+    # Save the image with bounding boxes to the output path
+    cv2.imwrite(output_path, image_with_boxes)
+
+def draw_bounding_boxes(image_path, bounding_boxes, output_path):
+    # Read the input image
+    image = cv2.imread(image_path)
+
+    # Create a copy of the image to draw on
+    image_with_boxes = image.copy()
+
+    for bbox in bounding_boxes:
+        # Extract bounding box coordinates and label
+        min_x, max_x, min_y, max_y = bbox['min_x'], bbox['max_x'], bbox['min_y'], bbox['max_y']
+        color = bbox['color']
+        label = bbox.get('label', '')  # Get the label or use an empty string if not provided
+
+        # Draw the bounding box on the image
+        cv2.rectangle(image_with_boxes, (min_x, min_y), (max_x, max_y), color, thickness=2)
+
+        # Add label text if provided
+        if label:
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            cv2.putText(image_with_boxes, label, (min_x, min_y - 10), font, 0.5, color, 2)
+
+    # Save the image with bounding boxes to the output path
+    cv2.imwrite(output_path, image_with_boxes)
+def find_color_regions(image):
+    bounding_boxes = []
+    height, width, channels = image.shape
+    # Convert the image to the RGB format if it's in BGR
+    if channels == 4:  # Check for RGBA format and suppress the alpha channel
+        image = image[:, :, :3]
+
+    image_colors = list_distinct_colors(image)
+    
+    for color in image_colors:
+        mask = np.all(image == color, axis=-1)
+        
+        # Calculate the bounding box directly from the mask
+        non_zero_pixels = np.where(mask)
+        min_x, max_x = min(non_zero_pixels[1]), max(non_zero_pixels[1])
+        min_y, max_y = min(non_zero_pixels[0]), max(non_zero_pixels[0])
+
+        bounding_box = {
+            'min_x': min_x,
+            'max_x': max_x,
+            'min_y': min_y,
+            'max_y': max_y,
+            'color': tuple(color),
+            'label': color_to_label(color,semantic_tags)
+        }
+        bounding_boxes.append(bounding_box)
+
+    return bounding_boxes
+def find_color_regions_contours(image):
+    bounding_boxes = []
+    height, width, channels = image.shape
+    min_dim = min(height, width)
+
+    # Convert the image to the RGB format if it's in BGR
+    if channels == 4:  # Check for RGBA format and suppress the alpha channel
+        image = image[:, :, :3]
+
+    image_colors = list_distinct_colors(image)
+
+    # Convert the image to a NumPy array for more efficient processing
+    image_np = np.asarray(image)
+
+    for color in image_colors:
+        mask = np.all(image_np == color, axis=-1)
+        contours, _ = cv2.findContours(np.uint8(mask), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        merged_boxes = []  # List to store merged bounding boxes
+
+        for contour in contours:
+            pixel_coordinates = contour.squeeze(axis=1)
+            if pixel_coordinates.shape[0] > 0:
+                min_x, max_x = pixel_coordinates[:, 0].min(), pixel_coordinates[:, 0].max()
+                min_y, max_y = pixel_coordinates[:, 1].min(), pixel_coordinates[:, 1].max()
+
+                if max_x - min_x > 3 and max_y - min_y > 3:
+                    label= color_to_label(color, semantic_tags)
+                    b_id=  f"b_box_{label}_{color[1]}{color[2]}"
+                    bounding_box = {
+                        'id': b_id,
+                        'min_x': int(min_x),
+                        'max_x': int(max_x),
+                        'min_y': int(min_y),
+                        'max_y': int(max_y),
+                        #'color': tuple(color),
+                        'label': label
+                    }
+
+                    # Check if this bounding box can be merged with any existing merged bounding boxes
+                    merge_attempt = False
+                    for merged_box in merged_boxes:
+                        h_dist = max(0, min_x - merged_box['max_x'], merged_box['min_x'] - max_x)
+                        v_dist = max(0, min_y - merged_box['max_y'], merged_box['min_y'] - max_y)
+                        max_dist = max(h_dist, v_dist)
+
+                        if max_dist < min_dim / 40:
+                            # Merge the bounding boxes
+                            merged_box['min_x'] = int(min(merged_box['min_x'], min_x))
+                            merged_box['max_x'] = int(max(merged_box['max_x'], max_x))
+                            merged_box['min_y'] = int(min(merged_box['min_y'], min_y))
+                            merged_box['max_y'] = int(max(merged_box['max_y'], max_y))
+                            merge_attempt = True
+                            break
+
+                    if not merge_attempt:
+                        merged_boxes.append(bounding_box)
+
+        bounding_boxes.extend(merged_boxes)
+
+    return bounding_boxes
+def find_color_regions_contours_1(image):
+
+    bounding_boxes = []
+    height, width, channels = image.shape
+    min_dim=min(height,width)
+    # Convert the image to the RGB format if it's in BGR
+    if channels == 4:  # Check for RGBA format and suppress the alpha channel
+        image = image[:, :, :3]
+    image_bgr = image.reshape(-1, 3)
+    
+    image_colors = list_distinct_colors(image)
+    
+    for color in image_colors:
+        mask = np.all(image == color, axis=-1)
+        contours, _ = cv2.findContours(np.uint8(mask), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        merged_boxes = []  # List to store merged bounding boxes
+
+        for contour in contours:
+            pixel_coordinates = contour.squeeze(axis=1).tolist()
+            if len(pixel_coordinates) > 0:
+                min_x, max_x = min(coord[0] for coord in pixel_coordinates), max(
+                    coord[0] for coord in pixel_coordinates)
+                min_y, max_y = min(coord[1] for coord in pixel_coordinates), max(
+                    coord[1] for coord in pixel_coordinates)
+                if max_x-min_x>3 and max_y - min_y >3:
+
+                    bounding_box = {
+                        'min_x': min_x,
+                        'max_x': max_x,
+                        'min_y': min_y,
+                        'max_y': max_y,
+                        'color': tuple(color),
+                        'label': color_to_label(color,semantic_tags)
+                    }
+
+                    # Check if this bounding box can be merged with any existing merged bounding boxes
+                    merge_attempt = False
+                    for merged_box in merged_boxes:
+                        left= (min_x < merged_box['min_x'])
+                        right= (min_x > merged_box['min_x'])
+                        up = (min_y < merged_box['min_y'])
+                        down = (min_y > merged_box['min_y'])
+                        h_dist =0
+                        v_dist=0
+
+                        if left:
+                            h_dist= max(h_dist,(merged_box['min_x']-max_x))
+                        if right:
+                            h_dist= max(h_dist,(min_x-merged_box['max_x']))
+                        if up:
+                            v_dist= max(v_dist,(merged_box['min_y']-max_y))
+                        if down:
+                            v_dist= max(v_dist,(min_y-merged_box['max_y']))
+
+                        max_dist= max(h_dist,v_dist)
+
+                        if max_dist<min_dim/40:
+                            # Merge the bounding boxes
+                            merged_box['min_x'] = min(merged_box['min_x'], min_x)
+                            merged_box['max_x'] = max(merged_box['max_x'], max_x)
+                            merged_box['min_y'] = min(merged_box['min_y'], min_y)
+                            merged_box['max_y'] = max(merged_box['max_y'], max_y)
+                            merge_attempt = True
+                            break
+                    
+                    if not merge_attempt:
+                        merged_boxes.append(bounding_box)
+
+        bounding_boxes.extend(merged_boxes)
+
+    return bounding_boxes
 
 def update_seg_camera_view(image, view, desired_width, desired_height):
     image.convert(carla.ColorConverter.CityScapesPalette)
@@ -228,7 +533,48 @@ synchro_queue = Queue()
 
 ImageObj = namedtuple('ImageObj', ['raw_data', 'width', 'height', 'fov'])
 
-selected_labels=['Bicycle','Bus','Car','Motorcycle','Rider','Pedestrians','traffic_light','traffic_sign','Truck']
+semantic_tags={
+    'unknown': {'color':(190,153,153), 'tag':0, 'id': 0},
+    'not_defined': {'color':(152,251,152), 'tag':0, 'id': 0},
+    'unlabeled': {'color':(0, 0, 0), 'tag':0, 'id': 0},
+    'building': {'color':(70, 70, 70), 'tag':1, 'id': 10},
+    'buildings': {'color':(70, 70, 70), 'tag':1, 'id': 10},
+    'fence': {'color':(100, 40, 40), 'tag':2, 'id': 20},
+    'fences': {'color':(100, 40, 40), 'tag':2,'id': 20},
+    'other': {'color':(55, 90, 80), 'tag':3, 'id': 30},
+    'pedestrian': {'color':(220, 20, 60), 'tag':4, 'id': 40},
+    'pedestrians': {'color':(220, 20, 60), 'tag':4, 'id': 40},
+    'cyclist': {'color':(255, 0, 0), 'tag':4, 'id': 45},
+    'rider':{'color':(255, 0, 0), 'tag':4, 'id': 45},
+    'pole': {'color':(153, 153, 153), 'tag':5, 'id': 50},
+    'roadLines': {'color':(157, 234, 50), 'tag':6, 'id': 60},
+    'roadLine': {'color':(157, 234, 50), 'tag':6, 'id': 60},
+    'roadlines': {'color':(157, 234, 50), 'tag':6, 'id': 60},
+    'roads': {'color':(128, 64, 128), 'tag':7, 'id': 70},
+    'sidewalks': {'color':(244, 35, 232), 'tag':8, 'id': 80},
+    'sidewalk': {'color':(244, 35, 232), 'tag':8, 'id': 80},
+    'vegetation': {'color':(107, 142, 35), 'tag':9, 'id': 90},
+    'bicycle': {'color':(119, 11, 32), 'tag':10,'id': 100},
+    'bus': {'color':(0, 60, 100), 'tag':10, 'id': 102},
+    'car': {'color':(0, 0, 142), 'tag':10, 'id': 104},
+    'truck': {'color':(0, 0, 70), 'tag':10, 'id': 106},
+    'motorcycle': {'color':(0, 0, 230), 'tag':10, 'id': 108},
+    'vehicle': {'color':(0, 0, 142), 'tag':10, 'id': 104},
+    'walls': {'color':(102, 102, 156), 'tag':11, 'id': 110},
+    'traffic_sign': {'color':(220, 220, 0), 'tag':12, 'id': 120},
+    'sky': {'color':(70, 130, 180), 'tag':13, 'id': 130},
+    'ground': {'color':(81, 0, 81), 'tag':14, 'id': 140},
+    'bridge': {'color':(150, 100, 100), 'tag':15, 'id': 150},
+    'rail_track': {'color':(230, 150, 140), 'tag':16, 'id': 160},
+    'railtrack' : {'color':(230, 150, 140), 'tag':16, 'id': 160},
+    'guard_rail': {'color':(180, 165, 180), 'tag':17, 'id': 170},
+    'guardrail' :  {'color':(180, 165, 180), 'tag':17, 'id': 170},
+    'traffic_light': {'color':(250, 170, 30), 'tag':18, 'id': 180},
+    'static': {'color':(110, 190, 160), 'tag':19, 'id': 190},
+    'dynamic': {'color':(170, 120, 50), 'tag':20, 'id': 200},
+    'water': {'color':(45, 60, 150), 'tag':21, 'id': 210},
+    'terrain': {'color':(145, 170, 100), 'tag':22, 'id': 220}
+}
 bb_labels= {
     #'Any' : carla.CityObjectLabel.Any,
     'Bicycle' : carla.CityObjectLabel.Bicycle,
@@ -244,7 +590,7 @@ bb_labels= {
     #'NONE' : carla.CityObjectLabel.NONE,
     'Other' : carla.CityObjectLabel.Other,
     'Pedestrians' : carla.CityObjectLabel.Pedestrians,
-    #'Poles' : carla.CityObjectLabel.Poles,
+    'Pole' : carla.CityObjectLabel.Poles,
     'RailTrack' : carla.CityObjectLabel.RailTrack,
     'Rider' : carla.CityObjectLabel.Rider,
     'RoadLines' : carla.CityObjectLabel.RoadLines,
@@ -271,20 +617,24 @@ def max_projected_length(length, distance, K):
 
 
 def is_visible(bb, camera_transform, k):
-    forward_vec = camera_transform.get_forward_vector()
-    bb_direction = bb.location - camera_transform.location
+    #forward_vec = camera_transform.get_forward_vector()
+    #bb_direction = bb.location - camera_transform.location
     dist = bb.location.distance(camera_transform.location)
-    bb_width = bb.extent.z
-    if max_projected_length(bb_width, dist, k) < 5:
+    #bb_width = bb.extent.z
+    #if max_projected_length(bb_width, dist, k) < 2:
         # print(bb)
         # print("too small")
+    ##    return False
+    dist=camera_transform.location.distance(bb.location)
+    if dist>1000:
         return False
-    dot_product = (forward_vec.x) * (bb_direction.x) + forward_vec.y * (bb_direction.y) + forward_vec.z * (
-        bb_direction.z)
+    return True
+    #dot_product = (forward_vec.x) * (bb_direction.x) + forward_vec.y * (bb_direction.y) + forward_vec.z * (
+    #    bb_direction.z)
     # if dot_product<=0:
     # print(bb)
     # print("behind camera")
-    return dot_product > 0
+    #return dot_product > 0
 
 
 def expand_bb(bounding_boxes):
@@ -473,6 +823,7 @@ def check_connection_status(client):
 
 def launch_carla_server():
     # launch the Carla server
+    close_carla_server()
     os_name = platform.system()
 
     print(f"Opening CARLA from path: {carla_path}")
@@ -806,3 +1157,81 @@ class ConsoleLogger:
         # Forward the message to the original stdout stream
         else:
             self.terminal.write(message)
+
+def compare_images(image1, image2):
+
+    # Ensure the images have the same dimensions
+    if image1.shape != image2.shape:
+        return False
+
+    # Calculate the absolute difference between the two images
+    difference = cv2.absdiff(image1, image2)
+
+    # Sum the absolute differences to get an overall difference score
+    total_difference = difference.sum()
+
+    # Define a threshold for similarity
+    # You can adjust this threshold depending on your specific needs
+    similarity_threshold = 1000
+
+    # Compare the total difference to the threshold
+    return total_difference < similarity_threshold
+
+
+def load_simulation_config(config_file):
+    # Default configuration values
+    default_config = {
+        "objects": {
+            "vehicle": 10,
+            "pedestrian": 15,
+            "cyclist": 3,
+            "motorcycle": 2,
+            "specific": {},  # Initialize the specific field as an empty dictionary
+            "other": 15,
+            # Add more object types and quantities as needed
+        },
+        "distribution_range": 50,
+        "nb_images": 100
+    }
+
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        config = {}  # Empty configuration if the file doesn't exist
+
+    # Merge the loaded configuration with the default values
+    merged_config = {**default_config, **config}
+    return merged_config
+instance_segmentation = np.array([[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]], dtype=np.uint8)
+semantic_segmentation = np.array([[[70, 70, 70], [100, 40, 40]], [[55, 90, 80], [220, 20, 60]]], dtype=np.uint8)
+
+#merged_image = merge_segmentation_images(instance_segmentation, semantic_segmentation)
+
+
+
+#print(merged_image)
+
+
+instance_segmentation = cv2.imread('image_1000_inst.png')
+semantic_segmentation = cv2.imread('image_1000_semseg.png')
+
+# Ensure that the images are in the correct format (e.g., uint8)
+instance_segmentation = instance_segmentation.astype(np.uint8)
+semantic_segmentation = semantic_segmentation.astype(np.uint8)
+
+# Call the merge function
+#merged_image = merge_segmentation_images(instance_segmentation, semantic_segmentation)
+
+# Save the merged image to a file
+#cv2.imwrite('merged_image_1000.png', merged_image)
+
+image = cv2.imread('merged_image_1000.png')
+image= image.astype(np.uint8)
+bounding_boxes = find_color_regions_contours(image)
+#for box in bounding_boxes:
+#    print("Bounding Box:", box)
+input_image_path = 'image_1000_rgb.png'  # Replace with the actual image path
+output_image_path = 'output_image_1000.png' 
+
+#draw_filtered_bounding_boxes(input_image_path, bounding_boxes, output_image_path,labels_of_interest)

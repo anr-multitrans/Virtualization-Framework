@@ -66,7 +66,7 @@ def process_instance_segmentation(image_path):
 
     return bounding_boxes
 
-def process_instance_semantic_segmentation_(instance_image_path, semantic_image_path, class_mapping):
+def process_instance_semantic_segmentation_(instance_image_path, semantic_image_path, class_mapping, selected_labels=None):
     instance_image = Image.open(instance_image_path)
     semantic_image = Image.open(semantic_image_path)
 
@@ -113,7 +113,7 @@ def process_instance_semantic_segmentation_(instance_image_path, semantic_image_
         unique_semantic_colors, counts = np.unique(object_semantic_colors, axis=0, return_counts=True)
         object_rgb_color = unique_semantic_colors[np.argmax(counts)]
 
-        label = next((key for key, value in class_mapping.items() if value == tuple(object_rgb_color.tolist())), "unknown")
+        label = next((key for key, value in class_mapping.items() if value == tuple(object_rgb_color.tolist()) and key != "sky"), "unknown")
         if label != "unknown":
             return [(id_counter, min_x, min_y, max_x, max_y, label)]
         if (not (region_mask is None)) and ( label.lower()  in specific):
@@ -136,7 +136,7 @@ def process_instance_semantic_segmentation_(instance_image_path, semantic_image_
     return result
 
 
-def process_instance_semantic_segmentation(instance_image_path, semantic_image_path, class_mapping):
+def process_instance_semantic_segmentation(instance_image_path, semantic_image_path, class_mapping, selected_labels=None):
     instance_image = Image.open(instance_image_path)
     semantic_image = Image.open(semantic_image_path)
 
@@ -176,7 +176,13 @@ def process_instance_semantic_segmentation(instance_image_path, semantic_image_p
             subregion_bounding_boxes = []
             subregion_colors = np.unique(semantic_array[region_mask], axis=0)
             for subregion_color in subregion_colors:
-                label = next((key for key, value in class_mapping.items() if value == tuple(subregion_color.tolist())), "unknown")
+                label=''
+                if selected_labels is not None:
+                    label = next((key for key, value in class_mapping.items() if value == tuple(subregion_color.tolist()) and key in selected_labels), "unknown")
+                else:
+                    label = next((key for key, value in class_mapping.items() if value == tuple(subregion_color.tolist())), "unknown")
+                
+
                 subregion_mask = np.all(semantic_array == subregion_color, axis=2)
                 subregion_contours, _ = cv2.findContours(
                     (subregion_mask * 255).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
@@ -207,34 +213,34 @@ def process_instance_semantic_segmentation(instance_image_path, semantic_image_p
 
 #CLASS_MAPPING = {    'car': (0, 0, 142), 'sky': (70, 130, 180)}
 CLASS_MAPPING = {    'unlabeled': (0, 0, 0),
-    'building': (70, 70, 70),
-    'fence': (100, 40, 40),
+    #'building': (70, 70, 70),
+    'fences': (100, 40, 40),
     'other': (55, 90, 80),
-    'pedestrian': (220, 20, 60),
-    'cyclist': (255, 0, 0),
-    'pole': (153, 153, 153),
-    'roadLines': (157, 234, 50),
-    'roads': (128, 64, 128),
-    'sidewalks': (244, 35, 232),
-    'vegetation': (107, 142, 35),
-    'bicycle': (119, 11, 32),
-    'bus': (0, 60, 100),
-    'car': (0, 0, 142),
-    'truck': (0, 0, 70),
-    'motorcycle': (0, 0, 230),
-    'vehicle': (0, 0, 142),
+    'pedestrians': (220, 20, 60),
+    'cyclists': (255, 0, 0),
+    'poles': (153, 153, 153),
+    #'roadLines': (157, 234, 50),
+    #'roads': (128, 64, 128),
+    #'sidewalks': (244, 35, 232),
+    #'vegetation': (107, 142, 35),
+    'bicycles': (119, 11, 32),
+    'buses': (0, 60, 100),
+    'cars': (0, 0, 142),
+    'trucks': (0, 0, 70),
+    'motorcycles': (0, 0, 230),
+    'vehicles': (0, 0, 142),
     'walls': (102, 102, 156),
-    'traffic_sign': (220, 220, 0),
-    'sky': (70, 130, 180),
-    'ground': (81, 0, 81),
-    'bridge': (150, 100, 100),
-    'rail_track': (230, 150, 140),
+    'traffic_signs': (220, 220, 0),
+    #'sky': (70, 130, 180),
+    #'ground': (81, 0, 81),
+    #'bridge': (150, 100, 100),
+    #'rail_track': (230, 150, 140),
     'guard_rail': (180, 165, 180),
     'traffic_light': (250, 170, 30),
     'static': (110, 190, 160),
     'dynamic': (170, 120, 50),
-    'water': (45, 60, 150),
-    'terrain': (145, 170, 100)
+    #'water': (45, 60, 150),
+    #'terrain': (145, 170, 100)
 }
 def draw_bounding_boxes(image_path, bounding_boxes):
     base_image = Image.open(image_path)
@@ -504,43 +510,46 @@ def refine_bbs(sensor_info_path, bounding_boxes_path, output_path, catalog_keywo
 
 
 
-def process_batch(batch_folder, keywords_dict):
+def process_batch(batch_folder, keywords_dict, selected_labels=None):
     rgb_folder_path = os.path.join(batch_folder, 'rgb')
     for filename in os.listdir(rgb_folder_path):
         if filename.endswith(".png") and filename.startswith("image_"):
-            frame_number = filename.split("_")[1].split(".")[0]
+            try:
+                frame_number = filename.split("_")[1].split(".")[0]
 
-            # Load images
-            rgb_image_path = os.path.join(batch_folder, 'rgb', filename)
-            semantic_image_path = os.path.join(batch_folder, 'semantic_segmentation', filename)
-            instance_image_path = os.path.join(batch_folder, 'instance_segmentation', filename)
-            #rgb_image = Image.open(rgb_image_path)
-            #semantic_image = Image.open(semantic_image_path)
-            #instance_image = Image.open(instance_image_path)
+                # Load images
+                rgb_image_path = os.path.join(batch_folder, 'rgb', filename)
+                semantic_image_path = os.path.join(batch_folder, 'semantic_segmentation', filename)
+                instance_image_path = os.path.join(batch_folder, 'instance_segmentation', filename)
+                #rgb_image = Image.open(rgb_image_path)
+                #semantic_image = Image.open(semantic_image_path)
+                #instance_image = Image.open(instance_image_path)
 
-            # Process instance and semantic segmentation images
-            result = process_instance_semantic_segmentation_(instance_image_path, semantic_image_path, CLASS_MAPPING)
+                # Process instance and semantic segmentation images
+                result = process_instance_semantic_segmentation_(instance_image_path, semantic_image_path, CLASS_MAPPING, selected_labels)
 
-            # Save processed results to JSON
-            result_json = f'output_{frame_number}.json'
-            save_result_to_json(result, os.path.join(batch_folder, result_json))
+                # Save processed results to JSON
+                result_json = f'output_{frame_number}.json'
+                save_result_to_json(result, os.path.join(batch_folder, result_json))
 
-            # Example: Refine bounding boxes using JSON files
-            refine_result = refine_bbs(os.path.join(batch_folder,'simulation_objects', f'image_{frame_number}.json'), os.path.join(batch_folder, result_json), os.path.join(batch_folder, 'labels' ,f'refined_{result_json}'), keywords_dict)
+                # Example: Refine bounding boxes using JSON files
+                refine_result = refine_bbs(os.path.join(batch_folder,'simulation_objects', f'image_{frame_number}.json'), os.path.join(batch_folder, result_json), os.path.join(batch_folder, 'labels' ,f'refined_{result_json}'), keywords_dict)
 
-            # Example: Draw bounding boxes on RGB image
-            result_image = draw_bounding_boxes2(rgb_image_path, refine_result)
-            result_image_path = os.path.join(batch_folder,'labels', f'output_image_{frame_number}.png')
-            result_image.save(result_image_path)
+                # Example: Draw bounding boxes on RGB image
+                result_image = draw_bounding_boxes2(rgb_image_path, refine_result)
+                result_image_path = os.path.join(batch_folder,'labels', f'output_image_{frame_number}.png')
+                result_image.save(result_image_path)
+            except Exception as e:
+                print(e)
 
-def post_process(batch_folder, catalog_json_filename):
+def post_process(batch_folder, catalog_json_filename, selected_labels=None):
     with open(catalog_json_filename, 'r') as json_file:
         json_data = json.load(json_file)
 
     catalog_tree = json_data['Props catalogue']
-    keywords_dict = preprocess_catalog_tree(catalog_tree)
+    keywords_dict = preprocess_catalog_tree(catalog_tree,)
 
-    process_batch(batch_folder, keywords_dict)
+    process_batch(batch_folder, keywords_dict,selected_labels)
 
 if __name__ == '__main__':
 
