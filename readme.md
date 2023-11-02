@@ -65,37 +65,37 @@ to tun the script just navigate to 'Virtualization-Framework/Python' and in term
 
 The script will excutes as follows:
 
-    Initializing Carla Connection:
-    The script attempts to establish a connection to the Carla simulator, ensuring a successful initiation of the connection.
+### Initializing Carla Connection:
+The script attempts to establish a connection to the Carla simulator, ensuring a successful initiation of the connection.
 
-    Directory Creation:
-    It generates several directories to store diverse data types, including RGB images, semantic segmentation images, instance segmentation images, simulation object data, and labels.
+### Directory Creation:
+It generates several directories to store diverse data types, including RGB images, semantic segmentation images, instance segmentation images, simulation object data, and labels.
 
-    Loading Simulation Configuration:
-    The script reads a simulation configuration from the specified file (config_file). This configuration file holds essential parameters for the simulation, such as the number of images to capture and the distribution range.
+### Loading Simulation Configuration:
+The script reads a simulation configuration from the specified file (config_file). This configuration file holds essential parameters for the simulation, such as the number of images to capture and the distribution range.
 
-    Connecting to Carla Simulator:
-    The script connects to the Carla simulator and loads a specific map, if one is specified within the configuration.
+### Connecting to Carla Simulator:
+The script connects to the Carla simulator and loads a specific map, if one is specified within the configuration.
 
-    Setting Carla Simulator Parameters:
-    It defines various settings for the Carla simulator, including synchronous mode and substep settings to ensure precise simulation control.
+### Setting Carla Simulator Parameters:
+It defines various settings for the Carla simulator, including synchronous mode and substep settings to ensure precise simulation control.
 
-    Spawning Vehicles and Sensors:
-    The script spawns a vehicle and attaches multiple sensors, such as RGB cameras and other relevant sensors. These sensors capture critical data during the simulation.
+### Spawning Vehicles and Sensors:
+The script spawns a vehicle and attaches multiple sensors, such as RGB cameras and other relevant sensors. These sensors capture critical data during the simulation.
 
-    Simulating the Scenario:
-    The script enters a loop to simulate a scenario for a predefined number of iterations (scenario_length). During each iteration, it captures data from the sensors, encompassing RGB, semantic segmentation, and instance segmentation images.
+### Simulating the Scenario:
+The script enters a loop to simulate a scenario for a predefined number of iterations (scenario_length). During each iteration, it captures data from the sensors, encompassing RGB, semantic segmentation, and instance segmentation images.
 
-    Data Processing:
-    The script processes the captured data, which includes object detection and extraction of bounding boxes. This processed data is saved to the specified directories.
+### Data Processing:
+The script processes the captured data, which includes object detection and extraction of bounding boxes. This processed data is saved to the specified directories.
 
-    Handling Object Destruction and Simulation Settings:
-    It manages the destruction of spawned objects and manipulates settings to guarantee the correct execution of the simulation.
+### Handling Object Destruction and Simulation Settings:
+It manages the destruction of spawned objects and manipulates settings to guarantee the correct execution of the simulation.
 
-    Completing the Simulation:
-    After the simulation concludes, the ego vehicle is removed, and the Carla simulator's settings are reset to their default values.
+### Completing the Simulation:
+After the simulation concludes, the ego vehicle is removed, and the Carla simulator's settings are reset to their default values.
 
-    Configuration File (config_file) Structure:
+## Configuration File (config_file) Structure:
 
 The config_file is a JSON configuration file that outlines the parameters for the simulation. It includes the following elements:
 
