@@ -1,5 +1,5 @@
 {
-  "map": "Town03",
+  "map": "Town10",
   "objects": {
     "vehicle": 7,
     "pedestrian": 13,
@@ -12,5 +12,5 @@
     },
     "other": 10 },
   "distribution_range": 70,
-  "nb_images": 0
+  "nb_images": 15
 }

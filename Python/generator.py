@@ -13,6 +13,8 @@ import cv2
 from datetime import datetime
 import argparse
 
+global_vars = {'camera_ready': False}
+
 # Get the current date and time
 current_datetime = datetime.now()
 
@@ -21,11 +23,12 @@ unix_timestamp = int(current_datetime.timestamp())
 
 #selected_labels=['Bicycle','Bus','Car','Pole','Motorcycle','Rider','Pedestrians','traffic_light','traffic_sign','Truck', 'Static', 'Dynamic']
 spawned_objects=[]
-camera_ready=False
+
 motorcycles = ["vehicle.harley-davidson.low_rider", "vehicle.kawasaki.ninja","vehicle.vespa.zx125","vehicle.yamaha.yzf"]
 bicycles = ["vehicle.bh.crossbike", "vehicle.diamondback.century","vehicle.gazelle.omafiets"]
 
 blueprints_to_exclude = motorcycles + bicycles
+sensor_queue = Queue()
 
 #spawned_objects = []
 def init_carla():
@@ -80,7 +83,7 @@ def try_to_spawn_object(world, location, offset_range, category ):
 
     # Randomly rotate the object
     random_rotation = carla.Rotation(yaw=random.uniform(0, 360), pitch=random.uniform(-5, 5), roll=random.uniform(-5, 5))
-    print(f'{random_blueprint.id} at {object_location}')
+    #print(f'{random_blueprint.id} at {object_location}')
     # Spawn the random object with the new location and rotation
     spawned_object = world.try_spawn_actor( random_blueprint, carla.Transform(object_location, random_rotation))
     return spawned_object
@@ -135,8 +138,9 @@ def spawn_objects(world, transform, simulation_config):
     except Exception as e:
         print(f"Error: {e}")
 def sensor_callback(sensor_data, sensor_queue, sensor_name, actor):
-    #print(sensor_name)
-    if camera_ready:
+    #print(f'call_back_of {sensor_name}')
+    #print(global_vars['camera_ready'])
+    if global_vars['camera_ready']:
         bbs={}
         transform =actor.get_transform()
         sensor_queue.put((sensor_data.frame, sensor_data, sensor_name,bbs,transform))  
@@ -170,7 +174,7 @@ sensor_params = {
             }
         }
     }
-def main(config_file):
+def main(config_file, global_vars, sensor_queue):
 
     try:
         init_carla()
@@ -214,7 +218,7 @@ def main(config_file):
 
     # Choose a random spawn point on the map
     spawn_points = map.get_spawn_points()
-    sensor_queue = Queue()
+    
     ego_vehicle =None
     sensor_list = []
     vego_bp =blueprint_library.find('vehicle.mercedes.sprinter')
@@ -247,7 +251,10 @@ def main(config_file):
             spawn_objects(world,ego_vehicle.get_transform(),simulation_config)
             world.tick()
             time.sleep(1)
-            camera_ready=True
+            global_vars['camera_ready']=True
+            print("Camera is ready")
+            print(global_vars['camera_ready'])
+            #time.sleep(10)
             world.apply_settings(synchronous_settings)
             
             while not data_ready:
@@ -285,16 +292,20 @@ def main(config_file):
                     print("    Some of the sensor information is missed")
                 
                    
-            
+                count_failure=0
                 if image_rgb is None:
                     print("rgb")
-                elif image_semantic is None:
+                    count_failure += 1
+                if image_semantic is None:
                     print("semantic_segmentation")
-                elif image_instance is None:
+                    count_failure += 1
+                if image_instance is None:
                     print("instance_segmentation")
-                elif objects is None:
+                    count_failure += 1
+                if objects is None:
                     print("bbs of simulation objects")
-                else:
+                    count_failure += 1
+                if count_failure==0:
                     #np_img = np.frombuffer(image_rgb.raw_data, dtype=np.dtype("uint8"))
                     #count=500
                     #if last_s_frame is not None:
@@ -308,7 +319,7 @@ def main(config_file):
                     #are_identical= equal_mask.all()
                     if True:
                         data_ready=True
-                        camera_ready = False
+                        global_vars['camera_ready'] = False
                         image_instance.save_to_disk(f'images_folder/instance_segmentation/image_{unix_timestamp}_{i}.png')
                         image_semantic.save_to_disk(f'images_folder/semantic_segmentation/image_{unix_timestamp}_{i}.png')
                         image_rgb.save_to_disk(f'images_folder/rgb/image_{unix_timestamp}_{i}.png')
@@ -338,7 +349,7 @@ def main(config_file):
                         for tag in objects:
                             filtered_objects[tag]=[]
                             for env_object,dist in objects[tag]:
-                                print(type(env_object))
+                                #print(type(env_object))
                                 obj_name = env_object.name.lower()  # Convert object name to lowercase
                                 
                                 obj_transform = env_object.transform
@@ -442,7 +453,7 @@ def main(config_file):
                 if o.is_alive:
                     o.destroy()
 
-            camera_ready = False
+            global_vars['camera_ready'] = False
             world.apply_settings(default_settings)
             time.sleep(2)
 
@@ -460,7 +471,7 @@ if __name__ == "__main__":
     
 
     args = parser.parse_args()
-    main(args.arg1)
+    main(args.arg1, global_vars,sensor_queue)
 
 
 
